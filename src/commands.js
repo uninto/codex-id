@@ -13,7 +13,6 @@ const {
   currentAccount,
   currentSlotLabel,
   displayAccount,
-  importLegacyAccounts,
   readAccounts,
   removeAccountEntry,
   resolveAccount,
@@ -47,9 +46,6 @@ const syncCurrentAccount = (env = process.env, output = process.stdout) => {
 
 const initAccounts = (env = process.env, output = process.stdout) => {
   runInitChecks(env);
-  const migration = importLegacyAccounts(env);
-  if (migration.imported > 0) output.write(`已从旧账号库迁移账号：${migration.imported} 个，`);
-  if (migration.removedLegacyRoot) output.write('已删除旧账号库，');
   output.write('环境检查通过，');
   syncCurrentAccount(env, output);
 };

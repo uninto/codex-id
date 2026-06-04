@@ -1,9 +1,7 @@
 const fs = require('node:fs');
-const path = require('node:path');
 const {
   assertNotSymlink,
   getAccountsFile,
-  getAccountsRoot,
   getCodexHome,
   writeFileAtomically,
 } = require('./paths');
@@ -11,7 +9,6 @@ const {
   decodeAccountEmailFromAuth,
   decodeAccountLabel,
   decodeShortAccountIdFromAuth,
-  readAuth,
 } = require('./auth');
 
 const STORE_VERSION = 1;
@@ -104,51 +101,10 @@ const currentAccount = (env = process.env) => {
   return readAccounts(env).find((account) => displayAccount(account) === current) || null;
 };
 
-const legacyAccountDirs = (env = process.env) => {
-  const root = getAccountsRoot(env);
-  if (!fs.existsSync(root)) return [];
-  assertNotSymlink(root, '拒绝读取符号链接账号目录');
-  return fs.readdirSync(root)
-    .filter((name) => !name.startsWith('.'))
-    .map((name) => path.join(root, name))
-    .filter((dir) => {
-      if (!fs.existsSync(dir)) return false;
-      assertNotSymlink(dir, '拒绝读取符号链接账号目录');
-      return fs.statSync(dir).isDirectory();
-    });
-};
-
-const removeLegacyAccountsRoot = (env = process.env) => {
-  const root = getAccountsRoot(env);
-  if (!fs.existsSync(root)) return false;
-  assertNotSymlink(root, '拒绝删除符号链接账号目录');
-  fs.rmSync(root, { recursive: true, force: true });
-  return true;
-};
-
-const importLegacyAccounts = (env = process.env) => {
-  const existing = readAccounts(env);
-  const imported = [];
-  const byId = new Map(existing.map((account) => [account.id, account]));
-  const legacyDirs = legacyAccountDirs(env);
-  for (const dir of legacyDirs) {
-    const auth = readAuth(dir);
-    if (!auth) continue;
-    const account = normalizeAccount(auth);
-    if (byId.has(account.id)) continue;
-    imported.push(account);
-    byId.set(account.id, account);
-  }
-  if (imported.length > 0) writeAccounts([...byId.values()], env);
-  const removedLegacyRoot = legacyDirs.length > 0 ? removeLegacyAccountsRoot(env) : false;
-  return { imported: imported.length, removedLegacyRoot };
-};
-
 module.exports = {
   currentAccount,
   currentSlotLabel,
   displayAccount,
-  importLegacyAccounts,
   normalizeAccount,
   readAccounts,
   removeAccountEntry,

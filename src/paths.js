@@ -22,10 +22,6 @@ const getHomeDir = (env = process.env) => {
   return env.HOME || os.homedir();
 };
 
-const getAccountsRoot = (env = process.env) => {
-  return env.CODEX_ACCOUNTS_ROOT || path.join(getHomeDir(env), '.codex-accounts');
-};
-
 const getCodexHome = (env = process.env) => {
   return path.join(getHomeDir(env), '.codex');
 };
@@ -94,7 +90,6 @@ module.exports = {
   ensureDir,
   ensureReadableFile,
   getAccountsFile,
-  getAccountsRoot,
   getCodexHome,
   getHomeDir,
   writeFileAtomically,

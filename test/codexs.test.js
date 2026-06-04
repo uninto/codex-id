@@ -41,32 +41,18 @@ const writeAuth = (homeDir, email, extraTokens = {}) => {
     JSON.stringify(auth),
     { mode: 0o600 },
   );
-  syncTestStoreFromLegacyDir(homeDir, auth);
+  syncTestStoreFromAccountFixtureDir(homeDir, auth);
 };
 
-const syncTestStoreFromLegacyDir = (homeDir, auth) => {
+const syncTestStoreFromAccountFixtureDir = (homeDir, auth) => {
   const parts = homeDir.split(path.sep);
-  const index = parts.lastIndexOf('.codex-accounts');
+  const index = parts.lastIndexOf('.codex-test-accounts');
   if (index < 1) return;
   if (parts[index + 1] && parts[index + 1].startsWith('.')) return;
   const home = parts.slice(0, index).join(path.sep) || path.sep;
   const env = { HOME: home };
   const existing = readAccounts(env).filter((account) => account.id !== normalizeAccount(auth).id);
   writeAccounts([...existing, normalizeAccount(auth)], env);
-};
-
-const writeLegacyAuth = (homeDir, email, extraTokens = {}) => {
-  fs.mkdirSync(homeDir, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(
-    path.join(homeDir, 'auth.json'),
-    JSON.stringify({
-      tokens: {
-        id_token: makeJwt(email),
-        ...extraTokens,
-      },
-    }),
-    { mode: 0o600 },
-  );
 };
 
 const writeUsageAuth = (homeDir, email) => {
@@ -90,7 +76,7 @@ const writeAuthWithIdentity = (homeDir, identityPayload, extraTokens = {}) => {
     },
   };
   fs.writeFileSync(path.join(homeDir, 'auth.json'), JSON.stringify(auth), { mode: 0o600 });
-  syncTestStoreFromLegacyDir(homeDir, auth);
+  syncTestStoreFromAccountFixtureDir(homeDir, auth);
 };
 
 const readAccountsFile = (home) => {
@@ -168,7 +154,7 @@ test('help uses the codexs command name', () => {
 
 test('list shows sorted accounts and marks the current account', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
 
   writeAuth(path.join(accountsRoot, 'z@example.com'), 'z@example.com');
   writeAuth(path.join(accountsRoot, 'a@example.com'), 'a@example.com');
@@ -177,7 +163,6 @@ test('list shows sorted accounts and marks the current account', () => {
   const result = runCli(['list'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
     },
   });
 
@@ -189,14 +174,13 @@ test('list shows sorted accounts and marks the current account', () => {
 
 test('list ignores hidden account directories', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, '.backup'), 'backup@example.com');
   writeAuth(path.join(accountsRoot, 'a@example.com'), 'a@example.com');
 
   const result = runCli(['list'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
     },
   });
 
@@ -207,13 +191,12 @@ test('list ignores hidden account directories', () => {
 
 test('list shows progress on stderr when progress is forced', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'a@example.com'), 'a@example.com');
 
   const result = runCli(['list'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CX_PROGRESS: '1',
     },
   });
@@ -224,7 +207,7 @@ test('list shows progress on stderr when progress is forced', () => {
 
 test('codex-accounts.json stores only auth objects without derived identity fields', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'a@example.com'), 'a@example.com');
 
   const store = readAccountsFile(home);
@@ -243,7 +226,7 @@ test('tokenExpiresSoon refreshes expired and near-expiry access tokens only', ()
 
 test('list refreshes near-expiry account auth before loading usage', async () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   const oldAccessToken = makeAccessToken(-1);
   const newAccessToken = makeAccessToken(172800);
   writeAuth(path.join(accountsRoot, 'current@example.com'), 'current@example.com', {
@@ -284,7 +267,6 @@ test('list refreshes near-expiry account auth before loading usage', async () =>
 
   await commands.listAccounts({
     HOME: home,
-    CODEX_ACCOUNTS_ROOT: accountsRoot,
     CX_PROGRESS: '0',
   }, new Writable({ write(chunk, encoding, callback) { callback(); } }), { refreshFetch, usageFetch });
 
@@ -303,7 +285,7 @@ test('list refreshes near-expiry account auth before loading usage', async () =>
 
 test('list skips refresh when access token has more than one day left', async () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   const accessToken = makeAccessToken(172800);
   writeAuth(path.join(accountsRoot, 'fresh@example.com'), 'fresh@example.com', {
     access_token: accessToken,
@@ -314,7 +296,6 @@ test('list skips refresh when access token has more than one day left', async ()
   let refreshCalls = 0;
   await commands.listAccounts({
     HOME: home,
-    CODEX_ACCOUNTS_ROOT: accountsRoot,
     CX_PROGRESS: '0',
   }, new Writable({ write(chunk, encoding, callback) { callback(); } }), {
     refreshFetch: async () => { refreshCalls += 1; },
@@ -327,7 +308,7 @@ test('list skips refresh when access token has more than one day left', async ()
 
 test('list reports refresh failure and continues with old auth', async () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   const accessToken = makeAccessToken(-1);
   writeAuth(path.join(accountsRoot, 'expired@example.com'), 'expired@example.com', {
     access_token: accessToken,
@@ -338,7 +319,6 @@ test('list reports refresh failure and continues with old auth', async () => {
   const stderr = [];
   await commands.listAccounts({
     HOME: home,
-    CODEX_ACCOUNTS_ROOT: accountsRoot,
     CX_PROGRESS: '0',
   }, new Writable({ write(chunk, encoding, callback) { callback(); } }), {
     errOutput: { write: (value) => stderr.push(value) },
@@ -352,7 +332,7 @@ test('list reports refresh failure and continues with old auth', async () => {
 
 test('list renders usage columns and light gray cooling rows', async () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'free@example.com'), 'free@example.com');
 
   const originalLoadUsage = usage.loadUsage;
@@ -379,7 +359,6 @@ test('list renders usage columns and light gray cooling rows', async () => {
   try {
     await commands.listAccounts({
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CX_PROGRESS: '0',
     }, output);
   } finally {
@@ -396,7 +375,7 @@ test('list renders usage columns and light gray cooling rows', async () => {
 
 test('current account keeps its status color instead of selected color', async () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'current@example.com'), 'current@example.com');
   writeAuth(path.join(home, '.codex'), 'current@example.com');
 
@@ -424,7 +403,6 @@ test('current account keeps its status color instead of selected color', async (
   try {
     await commands.listAccounts({
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CX_PROGRESS: '0',
     }, output);
   } finally {
@@ -545,7 +523,7 @@ test('auto switch triggers for limited cooling or offline current accounts', () 
 
 test('probe account status uses usage endpoint response status', async () => {
   const home = makeTempHome();
-  const accountHome = path.join(home, '.codex-accounts', 'online@example.com');
+  const accountHome = path.join(home, '.codex-test-accounts', 'online@example.com');
   writeUsageAuth(accountHome, 'online@example.com');
 
   assert.equal(await usage.probeAccountStatus(accountHome, async () => ({
@@ -564,7 +542,7 @@ test('probe account status uses usage endpoint response status', async () => {
 
 test('usage requests avoid browser user agent challenge', async () => {
   const home = makeTempHome();
-  const accountHome = path.join(home, '.codex-accounts', 'online@example.com');
+  const accountHome = path.join(home, '.codex-test-accounts', 'online@example.com');
   writeUsageAuth(accountHome, 'online@example.com');
   const [account] = readAccounts({ HOME: home });
   const calls = [];
@@ -615,13 +593,12 @@ test('list rejects symlinked codex-accounts.json', () => {
 
 test('remove shows indexed progress while probing accounts', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'offline@example.com'), 'offline@example.com');
 
   const result = runCli(['remove'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CX_PROGRESS: '1',
     },
     input: 'x\n',
@@ -633,13 +610,12 @@ test('remove shows indexed progress while probing accounts', () => {
 
 test('remove without selector does not require codex binary for probing', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'offline@example.com'), 'offline@example.com');
 
   const result = runCli(['remove'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CX_PROGRESS: '1',
     },
     input: 'x\n',
@@ -685,7 +661,7 @@ test('use without selector shows progress when checking current account quota', 
 
 test('use without selector keeps current account when no available account exists', async () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'current@example.com'), 'current@example.com');
   writeAuth(path.join(accountsRoot, 'other@example.com'), 'other@example.com');
   writeAuth(path.join(home, '.codex'), 'current@example.com');
@@ -707,7 +683,6 @@ test('use without selector keeps current account when no available account exist
   try {
     await commands.useDefaultAccount({
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CX_PROGRESS: '0',
     }, output);
   } finally {
@@ -721,7 +696,7 @@ test('use without selector keeps current account when no available account exist
 
 test('use without selector keeps current account while current state is available', async () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'current@example.com'), 'current@example.com');
   writeAuth(path.join(accountsRoot, 'better@example.com'), 'better@example.com');
   writeAuth(path.join(home, '.codex'), 'current@example.com');
@@ -743,7 +718,6 @@ test('use without selector keeps current account while current state is availabl
   try {
     await commands.useDefaultAccount({
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CX_PROGRESS: '0',
     }, output);
   } finally {
@@ -757,7 +731,7 @@ test('use without selector keeps current account while current state is availabl
 
 test('use without selector switches to an available account when current state is limited', async () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'current@example.com'), 'current@example.com');
   writeAuth(path.join(accountsRoot, 'better@example.com'), 'better@example.com');
   writeAuth(path.join(home, '.codex'), 'current@example.com');
@@ -779,7 +753,6 @@ test('use without selector switches to an available account when current state i
   try {
     await commands.useDefaultAccount({
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CX_PROGRESS: '0',
     }, output);
   } finally {
@@ -793,7 +766,7 @@ test('use without selector switches to an available account when current state i
 
 test('use without selector skips paid accounts whose 7d quota is cooling', async () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'current@example.com'), 'current@example.com');
   writeAuth(path.join(accountsRoot, 'a-cooldown@example.com'), 'a-cooldown@example.com');
   writeAuth(path.join(accountsRoot, 'z-better@example.com'), 'z-better@example.com');
@@ -817,7 +790,6 @@ test('use without selector skips paid accounts whose 7d quota is cooling', async
   try {
     await commands.useDefaultAccount({
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CX_PROGRESS: '0',
     }, output);
   } finally {
@@ -832,7 +804,7 @@ test('use without selector skips paid accounts whose 7d quota is cooling', async
 
 test('use without selector switches to first available account without comparing quota', async () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'current@example.com'), 'current@example.com');
   writeAuth(path.join(accountsRoot, 'a-higher@example.com'), 'a-higher@example.com');
   writeAuth(path.join(accountsRoot, 'z-available@example.com'), 'z-available@example.com');
@@ -856,7 +828,6 @@ test('use without selector switches to first available account without comparing
   try {
     await commands.useDefaultAccount({
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CX_PROGRESS: '0',
     }, output);
   } finally {
@@ -871,13 +842,12 @@ test('use without selector switches to first available account without comparing
 
 test('use copies selected account auth into the active Codex slot', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'b@example.com'), 'b@example.com');
 
   const result = runCli(['use', '1'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
     },
   });
 
@@ -894,15 +864,14 @@ test('validateName rejects non-email account names', () => {
   assert.doesNotThrow(() => validateName('ok@example.com'));
 });
 
-test('use rejects legacy non-email selectors', () => {
+test('use rejects non-email selectors', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
-  writeAuth(path.join(accountsRoot, 'legacy_name'), 'legacy@example.com');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
+  writeAuth(path.join(accountsRoot, 'invalid_name'), 'invalid@example.com');
 
-  const result = runCli(['use', 'legacy_name'], {
+  const result = runCli(['use', 'invalid_name'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
     },
   });
 
@@ -912,7 +881,7 @@ test('use rejects legacy non-email selectors', () => {
 
 test('list shows short account_id when email is missing', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuthWithIdentity(
     path.join(accountsRoot, 'stored-dir'),
     {},
@@ -922,7 +891,6 @@ test('list shows short account_id when email is missing', () => {
   const result = runCli(['list'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
     },
   });
 
@@ -932,7 +900,7 @@ test('list shows short account_id when email is missing', () => {
 
 test('use accepts short account_id selector when email is missing', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuthWithIdentity(
     path.join(accountsRoot, 'stored-dir'),
     {},
@@ -942,7 +910,6 @@ test('use accepts short account_id selector when email is missing', () => {
   const result = runCli(['use', '6b17e1c8'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
     },
   });
 
@@ -952,7 +919,6 @@ test('use accepts short account_id selector when email is missing', () => {
 
 test('init syncs the active Codex account without jq', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
   const binDir = path.join(home, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
   const codexBin = writeFakeCodex(binDir);
@@ -961,7 +927,6 @@ test('init syncs the active Codex account without jq', () => {
   const result = runCli(['init'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CODEX_BIN: codexBin,
     },
   });
@@ -971,59 +936,9 @@ test('init syncs the active Codex account without jq', () => {
   assert.deepEqual(readAccounts({ HOME: home }).map((account) => account.id), ['init@example.com']);
 });
 
-test('init imports legacy .codex-accounts into codex-accounts.json', () => {
-  const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
-  const binDir = path.join(home, 'bin');
-  fs.mkdirSync(binDir, { recursive: true });
-  const codexBin = writeFakeCodex(binDir);
-  writeLegacyAuth(path.join(accountsRoot, 'legacy@example.com'), 'legacy@example.com');
-  writeAuth(path.join(home, '.codex'), 'current@example.com');
-
-  const result = runCli(['init'], {
-    env: {
-      HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
-      CODEX_BIN: codexBin,
-    },
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /已从旧账号库迁移账号：1 个/);
-  assert.deepEqual(
-    readAccounts({ HOME: home }).map((account) => account.id).sort(),
-    ['current@example.com', 'legacy@example.com'],
-  );
-  assert.equal(fs.existsSync(accountsRoot), false);
-});
-
-test('init migration keeps existing codex-accounts.json accounts when legacy duplicates exist', () => {
-  const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
-  const binDir = path.join(home, 'bin');
-  fs.mkdirSync(binDir, { recursive: true });
-  const codexBin = writeFakeCodex(binDir);
-  writeAuth(path.join(accountsRoot, 'same@example.com'), 'same@example.com', { refresh_token: 'new' });
-  writeLegacyAuth(path.join(accountsRoot, 'same@example.com'), 'same@example.com', { refresh_token: 'old' });
-  writeAuth(path.join(home, '.codex'), 'current@example.com');
-
-  const result = runCli(['init'], {
-    env: {
-      HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
-      CODEX_BIN: codexBin,
-    },
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const existing = readAccounts({ HOME: home }).find((account) => account.id === 'same@example.com');
-  assert.equal(existing.auth.tokens.refresh_token, 'new');
-  assert.equal(fs.existsSync(accountsRoot), false);
-});
-
 test('add overwrites an existing account with the new login result', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
+  const accountsRoot = path.join(home, '.codex-test-accounts');
   const binDir = path.join(home, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
   const codexBin = writeFakeCodexWithLogin(binDir, 'existing@example.com', { refresh_token: 'new-token' });
@@ -1032,7 +947,6 @@ test('add overwrites an existing account with the new login result', () => {
   const result = runCli(['add'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CODEX_BIN: codexBin,
     },
   });
@@ -1047,7 +961,6 @@ test('add overwrites an existing account with the new login result', () => {
 
 test('add reports codex login failure details', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
   const binDir = path.join(home, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
   const codexBin = path.join(binDir, process.platform === 'win32' ? 'codex.cmd' : 'codex');
@@ -1060,7 +973,6 @@ test('add reports codex login failure details', () => {
   const result = runCli(['add'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CODEX_BIN: codexBin,
     },
   });
@@ -1075,7 +987,6 @@ test('add reports codex login failure details', () => {
 
 test('add falls back to short account_id when email is missing', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
   const binDir = path.join(home, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
   const codexBin = writeFakeCodexWithLogin(
@@ -1087,7 +998,6 @@ test('add falls back to short account_id when email is missing', () => {
   const result = runCli(['add'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CODEX_BIN: codexBin,
     },
   });
@@ -1099,7 +1009,6 @@ test('add falls back to short account_id when email is missing', () => {
 
 test('init falls back to short account_id when email is missing', () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
   const binDir = path.join(home, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
   const codexBin = writeFakeCodex(binDir);
@@ -1112,7 +1021,6 @@ test('init falls back to short account_id when email is missing', () => {
   const result = runCli(['init'], {
     env: {
       HOME: home,
-      CODEX_ACCOUNTS_ROOT: accountsRoot,
       CODEX_BIN: codexBin,
     },
   });
@@ -1124,11 +1032,11 @@ test('init falls back to short account_id when email is missing', () => {
 
 test('probe account status returns offline when auth.json missing and unknown when fetch unavailable', async () => {
   const home = makeTempHome();
-  const noAuthDir = path.join(home, '.codex-accounts', 'noauth@example.com');
+  const noAuthDir = path.join(home, '.codex-test-accounts', 'noauth@example.com');
   fs.mkdirSync(noAuthDir, { recursive: true });
   assert.equal(await usage.probeAccountStatus(noAuthDir, async () => ({ ok: true })), 'offline');
 
-  const accountDir = path.join(home, '.codex-accounts', 'has@example.com');
+  const accountDir = path.join(home, '.codex-test-accounts', 'has@example.com');
   writeUsageAuth(accountDir, 'has@example.com');
   // fetchImpl 不可用时应返回 unknown，而不是 offline。
   assert.equal(await usage.probeAccountStatus(accountDir, null), 'unknown');
@@ -1139,7 +1047,7 @@ test('probe rejects symlinked auth.json (usage path symlink defense)', async () 
   const home = makeTempHome();
   const realDir = path.join(home, 'real');
   writeUsageAuth(realDir, 'real@example.com');
-  const accountDir = path.join(home, '.codex-accounts', 'real@example.com');
+  const accountDir = path.join(home, '.codex-test-accounts', 'real@example.com');
   fs.mkdirSync(accountDir, { recursive: true });
   fs.symlinkSync(path.join(realDir, 'auth.json'), path.join(accountDir, 'auth.json'));
 
@@ -1205,8 +1113,6 @@ test('vscode codex lookup only uses compatible platform bins', () => {
 
 test('use without selector reports empty account store instead of failing on usage', async () => {
   const home = makeTempHome();
-  const accountsRoot = path.join(home, '.codex-accounts');
-  fs.mkdirSync(accountsRoot, { recursive: true });
 
   const chunks = [];
   const output = new Writable({
@@ -1218,7 +1124,6 @@ test('use without selector reports empty account store instead of failing on usa
 
   await commands.useDefaultAccount({
     HOME: home,
-    CODEX_ACCOUNTS_ROOT: accountsRoot,
     CX_PROGRESS: '0',
   }, output);
 

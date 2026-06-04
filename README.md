@@ -94,10 +94,6 @@ codexs i
 ~/.codex/codex-accounts.json
 ```
 
-`init` 还会检测旧账号库 `~/.codex-accounts/`，并把其中已有账号导入到
-新的 `~/.codex/codex-accounts.json`。导入只发生在 `init`，`list/use/add/remove`
-不会再读取旧账号库。旧账号库导入成功后会被删除。
-
 登录账号：
 
 ```bash
@@ -211,12 +207,6 @@ codexs r
 ```
 
 ## 环境变量
-
-```bash
-CODEX_ACCOUNTS_ROOT=$HOME/.codex-accounts
-```
-
-仅用于 `codexs init` 导入旧 `~/.codex-accounts` 时覆盖旧账号库路径。
 
 ```bash
 CODEX_BIN=/path/to/codex
