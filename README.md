@@ -124,6 +124,10 @@ codexs l
 
 `list` 默认会先联网查询额度信息，但不走模型生成：
 
+- 查询额度前会检查账号库里的 `access_token`，已过期或 1 天内到期时，
+  自动用 `refresh_token` 续期并回写 `~/.codex/codex-accounts.json`
+- 如果续期的是当前生效账号，会同步更新 `~/.codex/auth.json`
+- 续期失败不会伪装成功；后续探活仍会按 Usage 接口结果显示离线或未知
 - 优先显示套餐、5 小时额度、周额度
 - 账号列直接显示完整邮箱；邮箱缺失时显示短 ID，不做截断
 - 账号显示顺序与 `codexs use N`、`codexs remove N` 的编号解析顺序一致

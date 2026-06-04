@@ -8,6 +8,7 @@ const { test } = require('node:test');
 const commands = require('../src/commands');
 const usage = require('../src/usage');
 const { normalizeAccount, readAccounts, validateName, writeAccounts } = require('../src/accounts');
+const { tokenExpiresSoon } = require('../src/refresh');
 const { getUsageRowColor } = commands;
 const { ACCOUNT_USAGE_STATES } = usage;
 
@@ -73,6 +74,11 @@ const writeUsageAuth = (homeDir, email) => {
     access_token: `access-token-${email}`,
     account_id: `account-${email}`,
   });
+};
+
+const makeAccessToken = (expiresInSeconds) => {
+  const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
+  return makeJwt({ exp });
 };
 
 const writeAuthWithIdentity = (homeDir, identityPayload, extraTokens = {}) => {
@@ -227,6 +233,121 @@ test('codex-accounts.json stores only auth objects without derived identity fiel
   assert.equal(store.accounts.length, 1);
   assert.deepEqual(Object.keys(store.accounts[0]), ['tokens']);
   assert.equal(store.accounts[0].tokens.id_token, makeJwt('a@example.com'));
+});
+
+test('tokenExpiresSoon refreshes expired and near-expiry access tokens only', () => {
+  assert.equal(tokenExpiresSoon({ tokens: { access_token: makeAccessToken(-1) } }), true);
+  assert.equal(tokenExpiresSoon({ tokens: { access_token: makeAccessToken(3600) } }), true);
+  assert.equal(tokenExpiresSoon({ tokens: { access_token: makeAccessToken(172800) } }), false);
+});
+
+test('list refreshes near-expiry account auth before loading usage', async () => {
+  const home = makeTempHome();
+  const accountsRoot = path.join(home, '.codex-accounts');
+  const oldAccessToken = makeAccessToken(-1);
+  const newAccessToken = makeAccessToken(172800);
+  writeAuth(path.join(accountsRoot, 'current@example.com'), 'current@example.com', {
+    access_token: oldAccessToken,
+    refresh_token: 'refresh-current',
+    account_id: 'account-current',
+  });
+  writeAuth(path.join(home, '.codex'), 'current@example.com', {
+    access_token: oldAccessToken,
+    refresh_token: 'refresh-current',
+    account_id: 'account-current',
+  });
+
+  const refreshCalls = [];
+  const refreshFetch = async (url, options) => {
+    refreshCalls.push({ url, body: options.body.toString(), headers: options.headers });
+    return {
+      ok: true,
+      json: async () => ({
+        access_token: newAccessToken,
+        refresh_token: 'refresh-next',
+      }),
+    };
+  };
+  const usageFetch = async (url, options) => {
+    assert.equal(options.headers.Authorization, `Bearer ${newAccessToken}`);
+    return {
+      ok: true,
+      json: async () => ({
+        plan_type: 'pro',
+        rate_limit: {
+          primary_window: { used_percent: 10, limit_window_seconds: 18000 },
+          secondary_window: { used_percent: 20, limit_window_seconds: 604800 },
+        },
+      }),
+    };
+  };
+
+  await commands.listAccounts({
+    HOME: home,
+    CODEX_ACCOUNTS_ROOT: accountsRoot,
+    CX_PROGRESS: '0',
+  }, new Writable({ write(chunk, encoding, callback) { callback(); } }), { refreshFetch, usageFetch });
+
+  assert.equal(refreshCalls.length, 1);
+  assert.match(refreshCalls[0].url, /\/oauth\/token$/);
+  assert.match(refreshCalls[0].body, /grant_type=refresh_token/);
+  assert.match(refreshCalls[0].body, /refresh_token=refresh-current/);
+  assert.equal(refreshCalls[0].headers['Content-Type'], 'application/x-www-form-urlencoded');
+
+  const storedAuth = readAccounts({ HOME: home })[0].auth;
+  assert.equal(storedAuth.tokens.access_token, newAccessToken);
+  assert.equal(storedAuth.tokens.refresh_token, 'refresh-next');
+  const activeAuth = JSON.parse(fs.readFileSync(path.join(home, '.codex', 'auth.json'), 'utf8'));
+  assert.equal(activeAuth.tokens.access_token, newAccessToken);
+});
+
+test('list skips refresh when access token has more than one day left', async () => {
+  const home = makeTempHome();
+  const accountsRoot = path.join(home, '.codex-accounts');
+  const accessToken = makeAccessToken(172800);
+  writeAuth(path.join(accountsRoot, 'fresh@example.com'), 'fresh@example.com', {
+    access_token: accessToken,
+    refresh_token: 'refresh-fresh',
+    account_id: 'account-fresh',
+  });
+
+  let refreshCalls = 0;
+  await commands.listAccounts({
+    HOME: home,
+    CODEX_ACCOUNTS_ROOT: accountsRoot,
+    CX_PROGRESS: '0',
+  }, new Writable({ write(chunk, encoding, callback) { callback(); } }), {
+    refreshFetch: async () => { refreshCalls += 1; },
+    usageFetch: async () => ({ ok: false, status: 401 }),
+  });
+
+  assert.equal(refreshCalls, 0);
+  assert.equal(readAccounts({ HOME: home })[0].auth.tokens.access_token, accessToken);
+});
+
+test('list reports refresh failure and continues with old auth', async () => {
+  const home = makeTempHome();
+  const accountsRoot = path.join(home, '.codex-accounts');
+  const accessToken = makeAccessToken(-1);
+  writeAuth(path.join(accountsRoot, 'expired@example.com'), 'expired@example.com', {
+    access_token: accessToken,
+    refresh_token: 'refresh-expired',
+    account_id: 'account-expired',
+  });
+
+  const stderr = [];
+  await commands.listAccounts({
+    HOME: home,
+    CODEX_ACCOUNTS_ROOT: accountsRoot,
+    CX_PROGRESS: '0',
+  }, new Writable({ write(chunk, encoding, callback) { callback(); } }), {
+    errOutput: { write: (value) => stderr.push(value) },
+    refreshFetch: async () => ({ ok: false, status: 401 }),
+    usageFetch: async () => ({ ok: false, status: 401 }),
+  });
+
+  assert.match(stderr.join(''), /续期失败：expired@example\.com：刷新接口返回 401/);
+  assert.equal(readAccounts({ HOME: home })[0].auth.tokens.access_token, accessToken);
 });
 
 test('list renders usage columns and light gray cooling rows', async () => {

@@ -18,8 +18,10 @@ const {
   removeAccountEntry,
   resolveAccount,
   upsertAccount,
+  writeAccounts,
 } = require('./accounts');
 const { decodeAccountLabel, readAuth } = require('./auth');
+const { refreshAuth, tokenExpiresSoon } = require('./refresh');
 const usage = require('./usage');
 const term = require('./terminal');
 
@@ -307,11 +309,50 @@ const renderStatusRow = (row, accountWidth, output = process.stdout) => {
   term.printRow(line, { isCurrent: row.isCurrent, color: row.isOffline ? 'lightRed' : '' }, output);
 };
 
-const listAccounts = async (env = process.env, output = process.stdout) => {
+const refreshAccountForList = async (account, activeLabel, env, services, errOutput) => {
+  if (!tokenExpiresSoon(account.auth)) return { account, refreshedCurrent: false, changed: false };
+  try {
+    const nextAuth = await refreshAuth(account.auth, env, services.refreshFetch);
+    if (!nextAuth) return { account, refreshedCurrent: false, changed: false };
+    const next = { ...account, auth: nextAuth };
+    return {
+      account: next,
+      changed: true,
+      refreshedCurrent: displayAccount(account) === activeLabel,
+    };
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    errOutput.write(`续期失败：${displayAccount(account)}：${message}\n`);
+    return { account, refreshedCurrent: false, changed: false };
+  }
+};
+
+const refreshAccountsForList = async (accounts, activeLabel, env = process.env, services = {}) => {
+  const errOutput = services.errOutput || process.stderr;
+  const results = await Promise.all(accounts.map((account) => {
+    return refreshAccountForList(account, activeLabel, env, services, errOutput);
+  }));
+  if (!results.some((result) => result.changed)) return accounts;
+
+  const refreshed = results.map((result) => result.account);
+  writeAccounts(refreshed, env);
+  const current = results.find((result) => result.refreshedCurrent);
+  if (current) {
+    const codexHome = getCodexHome(env);
+    writeFileAtomically(path.join(codexHome, 'auth.json'), `${JSON.stringify(current.account.auth, null, 2)}\n`);
+  }
+  return refreshed;
+};
+
+const listAccounts = async (env = process.env, output = process.stdout, services = {}) => {
   ensureDir(getCodexHome(env));
-  const accounts = readAccounts(env);
   const activeLabel = currentSlotLabel(env);
-  const usageResults = await term.withProgress('正在查询账号额度...', () => usage.loadUsage(accounts), env);
+  const accounts = await term.withProgress('正在刷新登录态...', () => {
+    return refreshAccountsForList(readAccounts(env), activeLabel, env, services);
+  }, env);
+  const usageResults = await term.withProgress('正在查询账号额度...', () => {
+    return usage.loadUsage(accounts, services.usageFetch);
+  }, env);
   const hasUsage = usage.hasUsageData(usageResults);
   const rows = await loadAccountRows(accounts, activeLabel, usageResults, env);
   const accountWidth = Math.max('Account'.length, ...rows.map((r) => r.account.length));
