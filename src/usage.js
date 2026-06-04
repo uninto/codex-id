@@ -4,7 +4,6 @@ const { readAuth } = require('./auth');
 const USAGE_ENDPOINT = 'https://chatgpt.com/backend-api/wham/usage';
 const REQUEST_TIMEOUT_MS = 8000;
 const USAGE_5H_WINDOW_SECONDS = 18000;
-const USAGE_7D_WINDOW_SECONDS = 604800;
 const AUTO_SWITCH_MIN_REMAINING_PERCENT = 3;
 const QUOTA_COOLING_PERCENT = 100;
 const ACCOUNT_USAGE_STATES = Object.freeze({
@@ -43,7 +42,13 @@ const isValidPercent = (value) => {
 };
 
 const hasUsageFields = (item) => {
-  return Boolean(item && (item.plan || isValidPercent(item.h5_used) || isValidPercent(item.d7_used)));
+  return Boolean(item && (
+    item.plan
+    || isValidPercent(item.next_used)
+    || isValidPercent(item.total_used)
+    || isValidPercent(item.h5_used)
+    || isValidPercent(item.d7_used)
+  ));
 };
 
 // 将账号条目转换成可并发查询 Usage 的请求条目。
@@ -57,6 +62,16 @@ const buildUsageEntries = (accountDirs) => {
       accountId: fields.accountId,
     }];
   });
+};
+
+const findWindow = (windows, seconds) => {
+  return windows.find((window) => window.limit_window_seconds === seconds) || {};
+};
+
+const findTotalWindow = (windows) => {
+  return windows
+    .filter((window) => window.limit_window_seconds !== USAGE_5H_WINDOW_SECONDS)
+    .sort((a, b) => b.limit_window_seconds - a.limit_window_seconds)[0] || {};
 };
 
 // 查询单个账号额度；失败时返回结构化 error，避免单账号影响整批结果。
@@ -73,16 +88,23 @@ const fetchUsageOne = async (entry, fetchImpl = fetch) => {
     const data = await response.json();
     const rateLimit = data.rate_limit || {};
     const windows = [rateLimit.primary_window, rateLimit.secondary_window].filter(Boolean);
-    const findWindow = (seconds) => windows.find((window) => window.limit_window_seconds === seconds) || {};
-    const h5 = findWindow(USAGE_5H_WINDOW_SECONDS);
-    const d7 = findWindow(USAGE_7D_WINDOW_SECONDS);
+    const next = findWindow(windows, USAGE_5H_WINDOW_SECONDS);
+    const total = findTotalWindow(windows);
+    const nextUsed = normalizePercent(next.used_percent);
+    const totalUsed = normalizePercent(total.used_percent);
     return {
       key: entry.key,
       plan: data.plan_type || '',
-      h5_used: normalizePercent(h5.used_percent),
-      h5_reset: h5.reset_at ?? null,
-      d7_used: normalizePercent(d7.used_percent),
-      d7_reset: d7.reset_at ?? null,
+      next_used: nextUsed,
+      next_reset: next.reset_at ?? null,
+      next_seconds: next.limit_window_seconds ?? null,
+      total_used: totalUsed,
+      total_reset: total.reset_at ?? null,
+      total_seconds: total.limit_window_seconds ?? null,
+      h5_used: nextUsed,
+      h5_reset: next.reset_at ?? null,
+      d7_used: totalUsed,
+      d7_reset: total.reset_at ?? null,
     };
   } catch (error) {
     return { key: entry.key, error: error.message };
@@ -141,11 +163,13 @@ const classifyPrimaryWindow = (usedPercent) => {
 // 统一账号额度状态，供自动切换和后续展示逻辑复用。
 const getAccountUsageState = (item) => {
   if (!hasUsageFields(item)) return ACCOUNT_USAGE_STATES.OFFLINE;
-  if (item.plan === 'free') return classifyPrimaryWindow(item.d7_used);
-  if (!isValidPercent(item.d7_used) || item.d7_used >= QUOTA_COOLING_PERCENT) {
+  const nextUsed = item.next_used ?? item.h5_used;
+  const totalUsed = item.total_used ?? item.d7_used;
+  if (item.plan === 'free') return classifyPrimaryWindow(totalUsed);
+  if (!isValidPercent(totalUsed) || totalUsed >= QUOTA_COOLING_PERCENT) {
     return ACCOUNT_USAGE_STATES.COOLING;
   }
-  return classifyPrimaryWindow(item.h5_used);
+  return classifyPrimaryWindow(nextUsed);
 };
 
 const accountShouldAutoSwitch = (results, key) => {

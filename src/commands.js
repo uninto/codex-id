@@ -222,15 +222,15 @@ const useDefaultAccount = async (env = process.env, output = process.stdout) => 
   useAccount(next.id, env, output);
 };
 
-const getUsageRowColor = ({ isOffline, planLabel, h5Used, d7Used, h5Percent, d7Percent }) => {
+const getUsageRowColor = ({ isOffline, planLabel, nextUsed, totalUsed, nextPercent, totalPercent }) => {
   if (isOffline) return 'lightRed';
   if (planLabel === 'Free') {
-    if (d7Used >= 100 || d7Percent === '0%') return 'lightGray';
-    if (d7Used >= 97) return 'lightYellow';
+    if (totalUsed >= 100 || totalPercent === '0%') return 'lightGray';
+    if (totalUsed >= 97) return 'lightYellow';
     return '';
   }
-  if (h5Used >= 100 || h5Percent === '0%' || d7Percent === '0%') return 'lightGray';
-  if (h5Used >= 97) return 'lightYellow';
+  if (nextUsed >= 100 || nextPercent === '0%' || totalPercent === '0%') return 'lightGray';
+  if (nextUsed >= 97) return 'lightYellow';
   return '';
 };
 
@@ -274,29 +274,31 @@ const loadAccountRows = async (accounts, activeLabel, usageResults, env = proces
 
 const buildUsageColumns = (item) => {
   const planLabel = term.formatPlanType(item.plan);
-  const h5Percent = term.formatUsagePercent(item.h5_used);
-  const d7Percent = term.formatUsagePercent(item.d7_used);
-  const h5Column = h5Percent !== '-' && item.h5_reset
-    ? `${h5Percent} (${term.formatResetTime(item.h5_reset, 'time')})`
-    : h5Percent;
-  const d7Column = d7Percent !== '-' && item.d7_reset
-    ? `${d7Percent} (${term.formatResetTime(item.d7_reset, 'date')})`
-    : d7Percent;
+  const nextReset = item.next_reset ?? item.h5_reset;
+  const totalReset = item.total_reset ?? item.d7_reset;
+  const nextPercent = term.formatUsagePercent(item.next_used ?? item.h5_used);
+  const totalPercent = term.formatUsagePercent(item.total_used ?? item.d7_used);
+  const nextColumn = nextPercent !== '-' && nextReset
+    ? `${nextPercent} (${term.formatResetTime(nextReset, 'time')})`
+    : nextPercent;
+  const totalColumn = totalPercent !== '-' && totalReset
+    ? `${totalPercent} (${term.formatResetTime(totalReset, 'date')})`
+    : totalPercent;
 
-  return { d7Column, d7Percent, h5Column, h5Percent, planLabel };
+  return { nextColumn, nextPercent, planLabel, totalColumn, totalPercent };
 };
 
 const renderUsageRow = (row, item, accountWidth, output = process.stdout) => {
-  const { d7Column, d7Percent, h5Column, h5Percent, planLabel } = buildUsageColumns(item);
+  const { nextColumn, nextPercent, planLabel, totalColumn, totalPercent } = buildUsageColumns(item);
   const statusColor = getUsageRowColor({
-    d7Percent,
     isOffline: row.isOffline,
+    nextPercent,
+    nextUsed: item.next_used ?? item.h5_used,
     planLabel,
-    d7Used: item.d7_used,
-    h5Used: item.h5_used,
-    h5Percent,
+    totalPercent,
+    totalUsed: item.total_used ?? item.d7_used,
   });
-  const line = `${term.pad(row.indexDisplay, term.INDEX_WIDTH)} ${term.pad(row.account, accountWidth)} ${term.pad(planLabel, term.PLAN_WIDTH)} ${term.pad(h5Column, term.USAGE_WIDTH)} ${term.pad(d7Column, term.USAGE_WIDTH)}`;
+  const line = `${term.pad(row.indexDisplay, term.INDEX_WIDTH)} ${term.pad(row.account, accountWidth)} ${term.pad(planLabel, term.PLAN_WIDTH)} ${term.pad(nextColumn, term.USAGE_WIDTH)} ${term.pad(totalColumn, term.USAGE_WIDTH)}`;
   term.printRow(line, { isCurrent: row.isCurrent, color: statusColor }, output);
 };
 
@@ -354,7 +356,7 @@ const listAccounts = async (env = process.env, output = process.stdout, services
   const accountWidth = Math.max('Account'.length, ...rows.map((r) => r.account.length));
 
   const header = hasUsage
-    ? `${term.pad('No.', term.INDEX_WIDTH)} ${term.pad('Account', accountWidth)} ${term.pad('Plan', term.PLAN_WIDTH)} ${term.pad('5h', term.USAGE_WIDTH)} ${term.pad('7d', term.USAGE_WIDTH)}`
+    ? `${term.pad('No.', term.INDEX_WIDTH)} ${term.pad('Account', accountWidth)} ${term.pad('Plan', term.PLAN_WIDTH)} ${term.pad('Next', term.USAGE_WIDTH)} ${term.pad('Total', term.USAGE_WIDTH)}`
     : `${term.pad('No.', term.INDEX_WIDTH)} ${term.pad('Account', accountWidth)} ${term.pad('Status', term.STATUS_WIDTH)}`;
   output.write(`${term.bold(header, env, output)}\n`);
 

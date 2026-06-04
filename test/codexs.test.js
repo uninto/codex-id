@@ -368,9 +368,48 @@ test('list renders usage columns and light gray cooling rows', async () => {
   }
 
   const stdout = chunks.join('');
-  assert.match(stdout, /No\.\s+Account\s+Plan\s+5h\s+7d/);
-  assert.match(stdout, /\u001b\[1mNo\.\s+Account\s+Plan\s+5h\s+7d\s+\u001b\[0m/);
+  assert.match(stdout, /No\.\s+Account\s+Plan\s+Next\s+Total/);
+  assert.match(stdout, /\u001b\[1mNo\.\s+Account\s+Plan\s+Next\s+Total\s+\u001b\[0m/);
   assert.match(stdout, /\u001b\[38;2;230;230;230m1\s+free@example\.com\s+Free\s+-\s+0%/);
+});
+
+test('list renders monthly total window without window label', async () => {
+  const home = makeTempHome();
+  const accountsRoot = path.join(home, '.codex-test-accounts');
+  writeAuth(path.join(accountsRoot, 'free@example.com'), 'free@example.com');
+
+  const originalLoadUsage = usage.loadUsage;
+  usage.loadUsage = async () => [{
+    key: 'free@example.com',
+    plan: 'free',
+    next_used: null,
+    next_reset: null,
+    total_used: 5,
+    total_reset: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+    total_seconds: 2592000,
+  }];
+
+  const chunks = [];
+  const output = new Writable({
+    write(chunk, encoding, callback) {
+      chunks.push(chunk.toString());
+      callback();
+    },
+  });
+
+  try {
+    await commands.listAccounts({
+      HOME: home,
+      CX_PROGRESS: '0',
+    }, output);
+  } finally {
+    usage.loadUsage = originalLoadUsage;
+  }
+
+  const stdout = chunks.join('');
+  assert.match(stdout, /No\.\s+Account\s+Plan\s+Next\s+Total/);
+  assert.match(stdout, /free@example\.com\s+Free\s+-\s+95% \(\d{2}-\d{2}\)/);
+  assert.doesNotMatch(stdout, /30d|2592000|7d|5h/);
 });
 
 test('current account keeps its status color instead of selected color', async () => {
@@ -419,61 +458,61 @@ test('usage rows use status colors for limited cooling and offline accounts', ()
   assert.equal(getUsageRowColor({
     isOffline: false,
     planLabel: 'Free',
-    d7Used: 100,
-    h5Percent: '-',
-    d7Percent: '0%',
+    totalUsed: 100,
+    nextPercent: '-',
+    totalPercent: '0%',
   }), 'lightGray');
   assert.equal(getUsageRowColor({
     isOffline: false,
     planLabel: 'Free',
-    d7Used: 98,
-    h5Percent: '-',
-    d7Percent: '2%',
+    totalUsed: 98,
+    nextPercent: '-',
+    totalPercent: '2%',
   }), 'lightYellow');
   assert.equal(getUsageRowColor({
     isOffline: false,
     planLabel: 'Pro',
-    h5Percent: '0%',
-    d7Percent: '40%',
+    nextPercent: '0%',
+    totalPercent: '40%',
   }), 'lightGray');
   assert.equal(getUsageRowColor({
     isOffline: false,
     planLabel: 'Pro',
-    h5Used: 0,
-    h5Percent: '100%',
-    d7Percent: '40%',
+    nextUsed: 0,
+    nextPercent: '100%',
+    totalPercent: '40%',
   }), '');
   assert.equal(getUsageRowColor({
     isOffline: false,
     planLabel: 'Pro',
-    h5Percent: '30%',
-    d7Percent: '0%',
+    nextPercent: '30%',
+    totalPercent: '0%',
   }), 'lightGray');
   assert.equal(getUsageRowColor({
     isOffline: false,
     planLabel: 'Pro',
-    h5Percent: '30%',
-    d7Percent: '40%',
+    nextPercent: '30%',
+    totalPercent: '40%',
   }), '');
   assert.equal(getUsageRowColor({
     isOffline: true,
     planLabel: 'Pro',
-    h5Percent: '30%',
-    d7Percent: '40%',
+    nextPercent: '30%',
+    totalPercent: '40%',
   }), 'lightRed');
   assert.equal(getUsageRowColor({
     isOffline: false,
     planLabel: 'Pro',
-    h5Used: 98,
-    h5Percent: '2%',
-    d7Percent: '40%',
+    nextUsed: 98,
+    nextPercent: '2%',
+    totalPercent: '40%',
   }), 'lightYellow');
   assert.equal(getUsageRowColor({
     isOffline: false,
     planLabel: 'Pro',
-    h5Used: 100,
-    h5Percent: '0%',
-    d7Percent: '40%',
+    nextUsed: 100,
+    nextPercent: '0%',
+    totalPercent: '40%',
   }), 'lightGray');
 });
 
@@ -569,6 +608,43 @@ test('usage requests avoid browser user agent challenge', async () => {
     assert.equal(call.options.headers['ChatGPT-Account-Id'], 'account-online@example.com');
     assert.equal(Object.hasOwn(call.options.headers, 'User-Agent'), false);
   }
+});
+
+test('usage load maps monthly quota window to total fields', async () => {
+  const home = makeTempHome();
+  const accountHome = path.join(home, '.codex-test-accounts', 'monthly@example.com');
+  writeUsageAuth(accountHome, 'monthly@example.com');
+  const [account] = readAccounts({ HOME: home });
+
+  const results = await usage.loadUsage([account], async () => ({
+    ok: true,
+    json: async () => ({
+      plan_type: 'free',
+      rate_limit: {
+        primary_window: {
+          used_percent: 5,
+          reset_at: 1783146464,
+          limit_window_seconds: 2592000,
+        },
+      },
+    }),
+  }));
+
+  assert.deepEqual(results, [{
+    key: 'monthly@example.com',
+    plan: 'free',
+    next_used: null,
+    next_reset: null,
+    next_seconds: null,
+    total_used: 5,
+    total_reset: 1783146464,
+    total_seconds: 2592000,
+    h5_used: null,
+    h5_reset: null,
+    d7_used: 5,
+    d7_reset: 1783146464,
+  }]);
+  assert.equal(usage.getAccountUsageState(results[0]), ACCOUNT_USAGE_STATES.AVAILABLE);
 });
 
 test('list rejects symlinked codex-accounts.json', () => {
@@ -764,7 +840,7 @@ test('use without selector switches to an available account when current state i
   assert.match(chunks.join(''), /已切换 Codex 账号：better@example\.com/);
 });
 
-test('use without selector skips paid accounts whose 7d quota is cooling', async () => {
+test('use without selector skips paid accounts whose total quota is cooling', async () => {
   const home = makeTempHome();
   const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'current@example.com'), 'current@example.com');
