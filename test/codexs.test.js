@@ -412,6 +412,43 @@ test('list renders monthly total window without window label', async () => {
   assert.doesNotMatch(stdout, /30d|2592000|7d|5h/);
 });
 
+test('list renders near total reset as time', async () => {
+  const home = makeTempHome();
+  const accountsRoot = path.join(home, '.codex-test-accounts');
+  writeAuth(path.join(accountsRoot, 'near-total@example.com'), 'near-total@example.com');
+
+  const originalLoadUsage = usage.loadUsage;
+  usage.loadUsage = async () => [{
+    key: 'near-total@example.com',
+    plan: 'free',
+    next_used: null,
+    next_reset: null,
+    total_used: 5,
+    total_reset: Math.floor(Date.now() / 1000) + 2 * 60 * 60,
+    total_seconds: 2592000,
+  }];
+
+  const chunks = [];
+  const output = new Writable({
+    write(chunk, encoding, callback) {
+      chunks.push(chunk.toString());
+      callback();
+    },
+  });
+
+  try {
+    await commands.listAccounts({
+      HOME: home,
+      CX_PROGRESS: '0',
+    }, output);
+  } finally {
+    usage.loadUsage = originalLoadUsage;
+  }
+
+  const stdout = chunks.join('');
+  assert.match(stdout, /near-total@example\.com\s+Free\s+-\s+95% \(\d{2}:\d{2}\)/);
+});
+
 test('current account keeps its status color instead of selected color', async () => {
   const home = makeTempHome();
   const accountsRoot = path.join(home, '.codex-test-accounts');

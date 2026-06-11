@@ -24,6 +24,8 @@ const { refreshAuth, tokenExpiresSoon } = require('./refresh');
 const usage = require('./usage');
 const term = require('./terminal');
 
+const TOTAL_RESET_TIME_THRESHOLD_SECONDS = 24 * 60 * 60;
+
 // init 先做环境预检，失败时暴露真实缺失项而不是继续写账号库。
 const runInitChecks = (env = process.env) => {
   findCodexBin(env);
@@ -272,6 +274,11 @@ const loadAccountRows = async (accounts, activeLabel, usageResults, env = proces
   }));
 };
 
+const getTotalResetMode = (resetAt) => {
+  const now = Math.floor(Date.now() / 1000);
+  return resetAt - now <= TOTAL_RESET_TIME_THRESHOLD_SECONDS ? 'time' : 'date';
+};
+
 const buildUsageColumns = (item) => {
   const planLabel = term.formatPlanType(item.plan);
   const nextReset = item.next_reset ?? item.h5_reset;
@@ -282,7 +289,7 @@ const buildUsageColumns = (item) => {
     ? `${nextPercent} (${term.formatResetTime(nextReset, 'time')})`
     : nextPercent;
   const totalColumn = totalPercent !== '-' && totalReset
-    ? `${totalPercent} (${term.formatResetTime(totalReset, 'date')})`
+    ? `${totalPercent} (${term.formatResetTime(totalReset, getTotalResetMode(totalReset))})`
     : totalPercent;
 
   return { nextColumn, nextPercent, planLabel, totalColumn, totalPercent };
