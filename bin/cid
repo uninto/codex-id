@@ -3,22 +3,22 @@
 const commands = require('../src/commands');
 
 function usage(output = process.stdout) {
-  output.write(`codexs - Codex 账号切换助手
+  output.write(`cid - Codex 账号切换助手
 
 命令：
-  codexs init|i
-  codexs add|a
-  codexs list|l
-  codexs use|u [account]
-  codexs remove|r [account]
-  codexs help
+  cid init|i
+  cid add|a
+  cid list|l
+  cid use|u [account]
+  cid remove|r [account]
+  cid help
 
 说明：
   account 可以是序号、邮箱或短 ID；use 不带 account 时自动选择有额度账号。
-  ~/.codex/codex-accounts.json 存账号库。
+  ~/.codex/codex-id.json 存账号库。
   ~/.codex/auth.json 是当前生效槽位。
-  codexs remove 不带账号时删除离线账号。
-  codexs init 会检查基础环境，并同步当前登录态。
+  cid remove 不带账号时删除离线账号。
+  cid init 会检查基础环境，并同步当前登录态。
 
 环境变量：
   CODEX_BIN            指定 codex 可执行文件路径
@@ -26,7 +26,7 @@ function usage(output = process.stdout) {
 }
 
 function assertNoExtra(args, command) {
-  if (args.length !== 0) throw new Error(`用法：codexs ${command}`);
+  if (args.length !== 0) throw new Error(`用法：cid ${command}`);
 }
 
 async function main(argv = process.argv.slice(2), io = {}) {
@@ -54,12 +54,12 @@ async function main(argv = process.argv.slice(2), io = {}) {
     case 'use':
       if (args.length === 0) await commands.useDefaultAccount(env, output);
       else if (args.length === 1) commands.useAccount(args[0], env, output);
-      else throw new Error('用法：codexs use [account]');
+      else throw new Error('用法：cid use [account]');
       break;
     case 'remove':
       if (args.length === 0) await commands.removeOfflineAccounts(env, output, input, errOutput);
       else if (args.length === 1) commands.removeAccount(args[0], env, output);
-      else throw new Error('用法：codexs remove [account]');
+      else throw new Error('用法：cid remove [account]');
       break;
     case 'help':
       usage(output);

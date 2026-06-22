@@ -13,11 +13,11 @@ const { getUsageRowColor } = commands;
 const { ACCOUNT_USAGE_STATES } = usage;
 
 const ROOT = path.resolve(__dirname, '..');
-const CLI = path.join(ROOT, 'bin', 'codexs');
+const CLI = path.join(ROOT, 'bin', 'cid');
 
 // 为每个用例创建隔离 HOME，避免污染真实 Codex 配置。
 const makeTempHome = () => {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'codexs-test-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'codex-id-test-'));
 };
 
 // 生成测试用的无签名 JWT，只用于让解析逻辑读取 payload。
@@ -80,7 +80,7 @@ const writeAuthWithIdentity = (homeDir, identityPayload, extraTokens = {}) => {
 };
 
 const readAccountsFile = (home) => {
-  return JSON.parse(fs.readFileSync(path.join(home, '.codex', 'codex-accounts.json'), 'utf8'));
+  return JSON.parse(fs.readFileSync(path.join(home, '.codex', 'codex-id.json'), 'utf8'));
 };
 
 const writeFakeCodex = (binDir) => {
@@ -143,12 +143,12 @@ const runCli = (args, options = {}) => {
   return result;
 };
 
-test('help uses the codexs command name', () => {
+test('help uses the cid command name', () => {
   const result = runCli(['help']);
 
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /codexs - Codex 账号切换助手/);
-  assert.match(result.stdout, /codexs list\|l/);
+  assert.match(result.stdout, /cid - Codex 账号切换助手/);
+  assert.match(result.stdout, /cid list\|l/);
   assert.doesNotMatch(result.stdout, /\bcx\b/);
 });
 
@@ -205,7 +205,7 @@ test('list shows progress on stderr when progress is forced', () => {
   assert.match(result.stderr, /正在探活账号 1\/1：a@example\.com/);
 });
 
-test('codex-accounts.json stores only auth objects without derived identity fields', () => {
+test('codex-id.json stores only auth objects without derived identity fields', () => {
   const home = makeTempHome();
   const accountsRoot = path.join(home, '.codex-test-accounts');
   writeAuth(path.join(accountsRoot, 'a@example.com'), 'a@example.com');
@@ -684,15 +684,15 @@ test('usage load maps monthly quota window to total fields', async () => {
   assert.equal(usage.getAccountUsageState(results[0]), ACCOUNT_USAGE_STATES.AVAILABLE);
 });
 
-test('list rejects symlinked codex-accounts.json', () => {
+test('list rejects symlinked codex-id.json', () => {
   if (process.platform === 'win32') return;
 
   const home = makeTempHome();
   const codexHome = path.join(home, '.codex');
-  const externalStore = path.join(home, 'external-codex-accounts.json');
+  const externalStore = path.join(home, 'external-codex-id.json');
   fs.mkdirSync(codexHome, { recursive: true });
   fs.writeFileSync(externalStore, '{"version":1,"accounts":[]}');
-  fs.symlinkSync(externalStore, path.join(codexHome, 'codex-accounts.json'));
+  fs.symlinkSync(externalStore, path.join(codexHome, 'codex-id.json'));
 
   const result = runCli(['list'], {
     env: {

@@ -40,10 +40,10 @@ const syncCurrentAccount = (env = process.env, output = process.stdout) => {
   const codexHome = getCodexHome(env);
   const { account, overwritten } = upsertAccount(readAuth(codexHome), env);
   if (overwritten) {
-    output.write(`账号已存在：${displayAccount(account)}，已更新：${path.join(codexHome, 'codex-accounts.json')}\n`);
+    output.write(`账号已存在：${displayAccount(account)}，已更新：${path.join(codexHome, 'codex-id.json')}\n`);
     return;
   }
-  output.write(`已同步当前 Codex 账号：${displayAccount(account)}，已写入：${path.join(codexHome, 'codex-accounts.json')}\n`);
+  output.write(`已同步当前 Codex 账号：${displayAccount(account)}，已写入：${path.join(codexHome, 'codex-id.json')}\n`);
 };
 
 const initAccounts = (env = process.env, output = process.stdout) => {
@@ -86,7 +86,7 @@ const removeAccount = (selector, env = process.env, output = process.stdout) => 
 };
 
 const writeEmptyAccountsMessage = (env = process.env, output = process.stdout) => {
-  output.write(`（${path.join(getCodexHome(env), 'codex-accounts.json')} 里还没有账号）\n`);
+  output.write(`（${path.join(getCodexHome(env), 'codex-id.json')} 里还没有账号）\n`);
 };
 
 const formatCodexLoginFailure = (codexBin, result) => {

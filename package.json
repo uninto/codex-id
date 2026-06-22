@@ -1,12 +1,12 @@
 {
-	"name": "@uninto/codexs",
-	"version": "0.1.8",
+	"name": "codex-id",
+	"version": "0.2.0",
 	"description": "Codex account switching CLI",
 	"license": "MIT",
 	"type": "commonjs",
 	"main": "./src/codex.js",
 	"bin": {
-		"codexs": "bin/codexs"
+		"cid": "bin/cid"
 	},
 	"files": [
 		"bin",
@@ -15,7 +15,7 @@
 	],
 	"repository": {
 		"type": "git",
-		"url": ""
+		"url": "https://github.com/uninto/codex-id.git"
 	},
 	"keywords": [
 		"codex",
@@ -24,7 +24,7 @@
 	],
 	"scripts": {
 		"test": "node --test",
-		"check": "node --check bin/codexs && node --check src/*.js && npm test"
+		"check": "node --check bin/cid && node --check src/*.js && npm test"
 	},
 	"engines": {
 		"node": ">=18"

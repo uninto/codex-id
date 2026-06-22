@@ -27,7 +27,7 @@ const getCodexHome = (env = process.env) => {
 };
 
 const getAccountsFile = (env = process.env) => {
-  return path.join(getCodexHome(env), 'codex-accounts.json');
+  return path.join(getCodexHome(env), 'codex-id.json');
 };
 
 // 所有账号和 auth 文件操作前都拒绝符号链接，避免越界读写。
