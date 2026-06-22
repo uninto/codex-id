@@ -13,6 +13,7 @@ const {
   currentAccount,
   currentSlotLabel,
   displayAccount,
+  normalizeAccount,
   readAccounts,
   removeAccountEntry,
   resolveAccount,
@@ -25,6 +26,7 @@ const usage = require('./usage');
 const term = require('./terminal');
 
 const TOTAL_RESET_TIME_THRESHOLD_SECONDS = 24 * 60 * 60;
+const PERSONAL_TOKEN_PREFIX = /^Bearer\s+/i;
 
 // init 先做环境预检，失败时暴露真实缺失项而不是继续写账号库。
 const runInitChecks = (env = process.env) => {
@@ -194,6 +196,25 @@ const addAccount = async (env = process.env, output = process.stdout) => {
   }
 };
 
+const normalizePersonalAccessToken = (token) => {
+  const value = String(token || '').trim().replace(PERSONAL_TOKEN_PREFIX, '').trim();
+  if (!value) throw new Error('缺少访问令牌');
+  return value;
+};
+
+const addPersonalAccessToken = async (token, env = process.env, output = process.stdout, services = {}) => {
+  const personalAccessToken = normalizePersonalAccessToken(token);
+  const profile = await usage.fetchPersonalAccessTokenProfile(personalAccessToken, services.usageFetch);
+  const auth = {
+    OPENAI_API_KEY: null,
+    ...(profile.email ? { email: profile.email } : {}),
+    personal_access_token: personalAccessToken,
+  };
+  const { account, overwritten } = upsertAccount(auth, env);
+  const action = overwritten ? '已覆盖已有访问令牌账号' : '已添加访问令牌账号';
+  output.write(`${action}：${displayAccount(account)}\n`);
+};
+
 // 当前账号进入 limited/cooling/offline 后，才尝试切到第一个 available 账号。
 const useDefaultAccount = async (env = process.env, output = process.stdout) => {
   const accounts = readAccounts(env);
@@ -249,11 +270,13 @@ const lightStatusLabel = (account) => {
 
 // 组装列表行数据；已有 Usage 数据时不再额外探活。
 const buildAccountRow = async (account, index, total, activeLabel, usageResults, env) => {
-  const accountLabel = displayAccount(account);
+  const localLabel = displayAccount(account);
+  const item = usage.usageFor(usageResults, account.id) || {};
+  const accountLabel = item.email || localLabel;
   const key = account.id;
   let status = lightStatusLabel(account);
   let isOffline = false;
-  const isCurrent = Boolean(activeLabel && accountLabel === activeLabel);
+  const isCurrent = Boolean(activeLabel && localLabel === activeLabel);
 
   if (status === '已登录' && !usage.usageAvailableForAccount(usageResults, key)) {
     const probeStatus = await term.withProgress(`正在探活账号 ${index}/${total}：${accountLabel}`, () => usage.probeAccountStatus(account), env);
@@ -349,6 +372,28 @@ const refreshAccountsForList = async (accounts, activeLabel, env = process.env, 
   return refreshed;
 };
 
+const syncPersonalAccessTokenEmails = (accounts, usageResults, activeLabel, env = process.env) => {
+  let activeAuth = null;
+  let changed = false;
+  const synced = accounts.map((account) => {
+    const item = usage.usageFor(usageResults, account.id);
+    if (!item || !item.email || account.email || !account.auth.personal_access_token) return account;
+    const next = normalizeAccount({ ...account.auth, email: item.email });
+    item.key = next.id;
+    changed = true;
+    if (displayAccount(account) === activeLabel) activeAuth = next.auth;
+    return next;
+  });
+  if (!changed) return accounts;
+
+  writeAccounts(synced, env);
+  if (activeAuth) {
+    const codexHome = getCodexHome(env);
+    writeFileAtomically(path.join(codexHome, 'auth.json'), `${JSON.stringify(activeAuth, null, 2)}\n`);
+  }
+  return synced;
+};
+
 const listAccounts = async (env = process.env, output = process.stdout, services = {}) => {
   ensureDir(getCodexHome(env));
   const activeLabel = currentSlotLabel(env);
@@ -358,8 +403,9 @@ const listAccounts = async (env = process.env, output = process.stdout, services
   const usageResults = await term.withProgress('正在查询账号额度...', () => {
     return usage.loadUsage(accounts, services.usageFetch);
   }, env);
+  const syncedAccounts = syncPersonalAccessTokenEmails(accounts, usageResults, activeLabel, env);
   const hasUsage = usage.hasUsageData(usageResults);
-  const rows = await loadAccountRows(accounts, activeLabel, usageResults, env);
+  const rows = await loadAccountRows(syncedAccounts, activeLabel, usageResults, env);
   const accountWidth = Math.max('Account'.length, ...rows.map((r) => r.account.length));
 
   const header = hasUsage
@@ -377,6 +423,7 @@ const listAccounts = async (env = process.env, output = process.stdout, services
 
 module.exports = {
   addAccount,
+  addPersonalAccessToken,
   getUsageRowColor,
   initAccounts,
   listAccounts,

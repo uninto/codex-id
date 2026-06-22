@@ -27,6 +27,7 @@ const readIdTokenPayloadFromAuth = (auth) => {
 
 const decodeAccountEmailFromAuth = (auth) => {
   try {
+    if (auth && typeof auth.email === 'string') return auth.email;
     const decoded = readIdTokenPayloadFromAuth(auth);
     return decoded && typeof decoded.email === 'string' ? decoded.email : '';
   } catch (_) {
@@ -43,15 +44,28 @@ const decodeShortAccountIdFromAuth = (auth) => {
   }
 };
 
-// 优先展示邮箱；缺少邮箱时退回 account_id 前 8 位。
+const decodePersonalAccessTokenLabelFromAuth = (auth) => {
+  try {
+    const token = auth && auth.personal_access_token;
+    if (typeof token !== 'string' || token.length < 8) return '';
+    return `pat-${token.slice(-8).replace(/^[-_]+/, '')}`;
+  } catch (_) {
+    return '';
+  }
+};
+
+// 优先展示邮箱；缺少邮箱时退回 account_id 或 personal_access_token 短标识。
 const decodeAccountLabel = (homeDir) => {
   const auth = readAuth(homeDir);
-  return decodeAccountEmailFromAuth(auth) || decodeShortAccountIdFromAuth(auth);
+  return decodeAccountEmailFromAuth(auth)
+    || decodeShortAccountIdFromAuth(auth)
+    || decodePersonalAccessTokenLabelFromAuth(auth);
 };
 
 module.exports = {
   decodeAccountEmailFromAuth,
   decodeAccountLabel,
+  decodePersonalAccessTokenLabelFromAuth,
   decodeShortAccountIdFromAuth,
   readAuth,
 };

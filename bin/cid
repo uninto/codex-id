@@ -7,16 +7,17 @@ function usage(output = process.stdout) {
 
 命令：
   cid init|i
-  cid add|a
+  cid add|a [personal_access_token]
   cid list|l
   cid use|u [account]
   cid remove|r [account]
   cid help
 
 说明：
-  account 可以是序号、邮箱或短 ID；use 不带 account 时自动选择有额度账号。
+  account 可以是序号、邮箱、短 ID 或 pat-短标识；use 不带 account 时自动选择有额度账号。
   ~/.codex/codex-id.json 存账号库。
   ~/.codex/auth.json 是当前生效槽位。
+  cid add 不带参数时登录 Codex；带访问令牌时直接添加令牌账号。
   cid remove 不带账号时删除离线账号。
   cid init 会检查基础环境，并同步当前登录态。
 
@@ -48,8 +49,11 @@ async function main(argv = process.argv.slice(2), io = {}) {
       await commands.listAccounts(env, output);
       break;
     case 'add':
-      assertNoExtra(args, 'add');
-      await commands.addAccount(env, output);
+      if (args.length === 0) await commands.addAccount(env, output);
+      else if (args.length === 1) await commands.addPersonalAccessToken(args[0], env, output);
+      else if (args.length === 2 && /^Bearer$/i.test(args[0])) {
+        await commands.addPersonalAccessToken(args.join(' '), env, output);
+      } else throw new Error('用法：cid add [personal_access_token]');
       break;
     case 'use':
       if (args.length === 0) await commands.useDefaultAccount(env, output);

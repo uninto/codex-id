@@ -11,7 +11,7 @@
 └── codex-id.json  # codex-id 账号库
 ```
 
-`codex-id.json` 只保存最小结构：
+`codex-id.json` 只保存最小结构。默认账号来自 Codex 登录态：
 
 ```json
 {
@@ -28,9 +28,26 @@
 }
 ```
 
+也可以保存手动输入的访问令牌账号：
+
+```json
+{
+  "version": 1,
+  "accounts": [
+    {
+      "OPENAI_API_KEY": null,
+      "email": "user@example.com",
+      "personal_access_token": "at-..."
+    }
+  ]
+}
+```
+
 CLI 不会打印 token。它优先从 `auth.json` 的 `id_token` payload 中解析
-`email`；如果没有邮箱，再回退到 `tokens.account_id` 的前 8 位，
-用于列表显示和账号选择。
+`email`，手动访问令牌账号会优先使用 Usage 接口返回并保存的 `email`；
+如果没有邮箱，再回退到 `tokens.account_id` 的前 8 位，
+或 `personal_access_token` 后 8 位组成的
+`pat-短标识`，用于列表显示和账号选择。
 
 ## 运行方式
 
@@ -98,13 +115,26 @@ cid i
 
 ```bash
 cid add
+# 或直接添加手动访问令牌账号
+cid add at-...
 ```
 
-`add` 会调用 `codex login` 完成登录，并按登录态里的邮箱，或邮箱缺失时
-的 `account_id` 前 8 位写入：
+`add` 不带参数时会调用 `codex login` 完成登录，并按登录态里的邮箱，
+或邮箱缺失时的 `account_id` 前 8 位写入：
 
 ```bash
 ~/.codex/codex-id.json
+```
+
+`add` 带访问令牌时不会调用 `codex login`，会先用 Usage 额度接口验证令牌，
+并读取接口返回的邮箱、套餐等用户信息；验证通过后直接写入：
+
+```json
+{
+  "OPENAI_API_KEY": null,
+  "email": "user@example.com",
+  "personal_access_token": "用户输入的访问密钥"
+}
 ```
 
 如果该邮箱已存在，`add` 会直接覆盖账号库里的对应 `auth`，
@@ -172,6 +202,16 @@ cid use 6b17e1c8
 
 ```bash
 ~/.codex/auth.json
+```
+
+如果目标账号是手动访问令牌账号，写入的 `auth.json` 格式为：
+
+```json
+{
+  "OPENAI_API_KEY": null,
+  "email": "user@example.com",
+  "personal_access_token": "用户输入的访问密钥"
+}
 ```
 
 删除账号：

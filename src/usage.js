@@ -18,6 +18,12 @@ const ACCOUNT_USAGE_STATES = Object.freeze({
 const extractAuthFields = (homeDir) => {
   try {
     const auth = typeof homeDir === 'string' ? readAuth(homeDir) : homeDir && homeDir.auth;
+    if (auth && typeof auth.personal_access_token === 'string') {
+      return {
+        accessToken: auth.personal_access_token,
+        accountId: '',
+      };
+    }
     const tokens = auth && auth.tokens;
     if (!tokens || typeof tokens.access_token !== 'string' || typeof tokens.account_id !== 'string') {
       return null;
@@ -51,6 +57,12 @@ const hasUsageFields = (item) => {
   ));
 };
 
+const buildUsageHeaders = (token, accountId = '') => {
+  const headers = { Authorization: `Bearer ${token}` };
+  if (accountId) headers['ChatGPT-Account-Id'] = accountId;
+  return headers;
+};
+
 // 将账号条目转换成可并发查询 Usage 的请求条目。
 const buildUsageEntries = (accountDirs) => {
   return accountDirs.flatMap((account) => {
@@ -78,10 +90,7 @@ const findTotalWindow = (windows) => {
 const fetchUsageOne = async (entry, fetchImpl = fetch) => {
   try {
     const response = await fetchImpl(USAGE_ENDPOINT, {
-      headers: {
-        Authorization: `Bearer ${entry.token}`,
-        'ChatGPT-Account-Id': entry.accountId,
-      },
+      headers: buildUsageHeaders(entry.token, entry.accountId),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) return { key: entry.key, error: response.status };
@@ -94,6 +103,7 @@ const fetchUsageOne = async (entry, fetchImpl = fetch) => {
     const totalUsed = normalizePercent(total.used_percent);
     return {
       key: entry.key,
+      email: data.email || '',
       plan: data.plan_type || '',
       next_used: nextUsed,
       next_reset: next.reset_at ?? null,
@@ -118,10 +128,7 @@ const probeAccountStatus = async (homeDir, fetchImpl = fetch) => {
   if (typeof fetchImpl !== 'function' || typeof AbortSignal.timeout !== 'function') return 'unknown';
   try {
     const response = await fetchImpl(USAGE_ENDPOINT, {
-      headers: {
-        Authorization: `Bearer ${fields.accessToken}`,
-        'ChatGPT-Account-Id': fields.accountId,
-      },
+      headers: buildUsageHeaders(fields.accessToken, fields.accountId),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (response.ok) return 'online';
@@ -130,6 +137,22 @@ const probeAccountStatus = async (homeDir, fetchImpl = fetch) => {
   } catch (_) {
     return 'unknown';
   }
+};
+
+const fetchPersonalAccessTokenProfile = async (token, fetchImpl = fetch) => {
+  if (typeof fetchImpl !== 'function' || typeof AbortSignal.timeout !== 'function') {
+    throw new Error('当前 Node 运行时不支持访问令牌验证');
+  }
+  const response = await fetchImpl(USAGE_ENDPOINT, {
+    headers: buildUsageHeaders(token),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`访问令牌验证失败：${response.status}`);
+  const data = await response.json();
+  return {
+    email: data.email || '',
+    plan: data.plan_type || '',
+  };
 };
 
 const loadUsage = async (accountDirs, fetchImpl = fetch) => {
@@ -188,6 +211,7 @@ module.exports = {
   ACCOUNT_USAGE_STATES,
   accountIsAvailableForAutoSwitch,
   accountShouldAutoSwitch,
+  fetchPersonalAccessTokenProfile,
   getAccountUsageState,
   hasUsageData,
   loadUsage,

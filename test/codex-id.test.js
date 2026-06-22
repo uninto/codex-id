@@ -62,6 +62,15 @@ const writeUsageAuth = (homeDir, email) => {
   });
 };
 
+const writePersonalAccessTokenAccount = (home, token) => {
+  const auth = {
+    OPENAI_API_KEY: null,
+    personal_access_token: token,
+  };
+  writeAccounts([...readAccounts({ HOME: home }), normalizeAccount(auth)], { HOME: home });
+  return auth;
+};
+
 const makeAccessToken = (expiresInSeconds) => {
   const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
   return makeJwt({ exp });
@@ -373,6 +382,70 @@ test('list renders usage columns and light gray cooling rows', async () => {
   assert.match(stdout, /\u001b\[38;2;230;230;230m1\s+free@example\.com\s+Free\s+-\s+0%/);
 });
 
+test('list displays personal access token email from usage response', async () => {
+  const home = makeTempHome();
+  writePersonalAccessTokenAccount(home, 'at-test-token-CQUreFI');
+
+  const originalLoadUsage = usage.loadUsage;
+  usage.loadUsage = async () => [{
+    key: 'pat-CQUreFI',
+    email: 'token@example.com',
+    plan: 'team',
+    h5_used: 10,
+    h5_reset: null,
+    d7_used: 31,
+    d7_reset: null,
+  }];
+  const chunks = [];
+  const output = new Writable({
+    write(chunk, encoding, callback) {
+      chunks.push(chunk.toString());
+      callback();
+    },
+  });
+
+  try {
+    await commands.listAccounts({
+      HOME: home,
+      CX_PROGRESS: '0',
+    }, output);
+  } finally {
+    usage.loadUsage = originalLoadUsage;
+  }
+
+  assert.match(chunks.join(''), /1\s+token@example\.com\s+Team\s+90%\s+69%/);
+  assert.doesNotMatch(chunks.join(''), /pat-CQUreFI/);
+});
+
+test('list persists personal access token email discovered from usage response', async () => {
+  const home = makeTempHome();
+  const auth = writePersonalAccessTokenAccount(home, 'at-test-token-CQUreFI');
+  fs.writeFileSync(path.join(home, '.codex', 'auth.json'), JSON.stringify(auth), { mode: 0o600 });
+
+  const output = new Writable({ write(chunk, encoding, callback) { callback(); } });
+  await commands.listAccounts({ HOME: home, CX_PROGRESS: '0' }, output, {
+    usageFetch: async () => ({
+      ok: true,
+      json: async () => ({
+        email: 'token@example.com',
+        plan_type: 'team',
+        rate_limit: {
+          primary_window: { used_percent: 10, limit_window_seconds: 18000 },
+        },
+      }),
+    }),
+  });
+
+  const [account] = readAccounts({ HOME: home });
+  assert.equal(account.id, 'token@example.com');
+  assert.equal(account.auth.email, 'token@example.com');
+  assert.equal(account.tokenId, 'pat-CQUreFI');
+  assert.doesNotThrow(() => commands.useAccount('token@example.com', { HOME: home }, output));
+
+  const activeAuth = JSON.parse(fs.readFileSync(path.join(home, '.codex', 'auth.json'), 'utf8'));
+  assert.equal(activeAuth.email, 'token@example.com');
+});
+
 test('list renders monthly total window without window label', async () => {
   const home = makeTempHome();
   const accountsRoot = path.join(home, '.codex-test-accounts');
@@ -647,6 +720,38 @@ test('usage requests avoid browser user agent challenge', async () => {
   }
 });
 
+test('usage requests with personal access token omit ChatGPT account id', async () => {
+  const home = makeTempHome();
+  writePersonalAccessTokenAccount(home, 'at-test-token-CQUreFI');
+  const [account] = readAccounts({ HOME: home });
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options });
+    return {
+      ok: true,
+      json: async () => ({
+        email: 'token@example.com',
+        plan_type: 'team',
+        rate_limit: {
+          primary_window: { used_percent: 10, limit_window_seconds: 18000 },
+        },
+      }),
+    };
+  };
+
+  const results = await usage.loadUsage([account], fetchImpl);
+  const status = await usage.probeAccountStatus(account, fetchImpl);
+
+  assert.equal(results[0].key, 'pat-CQUreFI');
+  assert.equal(results[0].email, 'token@example.com');
+  assert.equal(status, 'online');
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.equal(call.options.headers.Authorization, 'Bearer at-test-token-CQUreFI');
+    assert.equal(Object.hasOwn(call.options.headers, 'ChatGPT-Account-Id'), false);
+  }
+});
+
 test('usage load maps monthly quota window to total fields', async () => {
   const home = makeTempHome();
   const accountHome = path.join(home, '.codex-test-accounts', 'monthly@example.com');
@@ -669,6 +774,7 @@ test('usage load maps monthly quota window to total fields', async () => {
 
   assert.deepEqual(results, [{
     key: 'monthly@example.com',
+    email: '',
     plan: 'free',
     next_used: null,
     next_reset: null,
@@ -972,9 +1078,10 @@ test('use copies selected account auth into the active Codex slot', () => {
 });
 
 test('validateName rejects non-email account names', () => {
-  assert.throws(() => validateName('foo'), /账号只能是邮箱/);
-  assert.throws(() => validateName('demo_1'), /账号只能是邮箱/);
+  assert.throws(() => validateName('foo'), /账号只能是邮箱、短 ID 或个人访问令牌短标识/);
+  assert.throws(() => validateName('demo_1'), /账号只能是邮箱、短 ID 或个人访问令牌短标识/);
   assert.doesNotThrow(() => validateName('ok@example.com'));
+  assert.doesNotThrow(() => validateName('pat-CQUreFI'));
 });
 
 test('use rejects non-email selectors', () => {
@@ -989,7 +1096,106 @@ test('use rejects non-email selectors', () => {
   });
 
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /账号只能是邮箱/);
+  assert.match(result.stderr, /账号只能是邮箱、短 ID 或个人访问令牌短标识/);
+});
+
+test('add accepts a personal access token argument', async () => {
+  const home = makeTempHome();
+  const chunks = [];
+  const output = new Writable({
+    write(chunk, encoding, callback) {
+      chunks.push(chunk.toString());
+      callback();
+    },
+  });
+
+  await commands.addPersonalAccessToken('at-test-token-CQUreFI', { HOME: home }, output, {
+    usageFetch: async () => ({
+      ok: true,
+      json: async () => ({ email: 'token@example.com', plan_type: 'team' }),
+    }),
+  });
+
+  assert.match(chunks.join(''), /已添加访问令牌账号：token@example\.com/);
+  assert.deepEqual(readAccountsFile(home), {
+    version: 1,
+    accounts: [{
+      OPENAI_API_KEY: null,
+      email: 'token@example.com',
+      personal_access_token: 'at-test-token-CQUreFI',
+    }],
+  });
+});
+
+test('add strips an optional Bearer prefix from a personal access token', async () => {
+  const home = makeTempHome();
+  const output = new Writable({ write(chunk, encoding, callback) { callback(); } });
+
+  await commands.addPersonalAccessToken('Bearer at-test-token-CQUreFI', { HOME: home }, output, {
+    usageFetch: async () => ({
+      ok: true,
+      json: async () => ({ email: 'token@example.com', plan_type: 'team' }),
+    }),
+  });
+
+  assert.equal(readAccounts({ HOME: home })[0].auth.personal_access_token, 'at-test-token-CQUreFI');
+  assert.equal(readAccounts({ HOME: home })[0].id, 'token@example.com');
+});
+
+test('add rejects an invalid personal access token before storing it', async () => {
+  const home = makeTempHome();
+  const output = new Writable({ write(chunk, encoding, callback) { callback(); } });
+
+  await assert.rejects(
+    () => commands.addPersonalAccessToken('at-bad-token', { HOME: home }, output, {
+      usageFetch: async () => ({ ok: false, status: 401 }),
+    }),
+    /访问令牌验证失败：401/,
+  );
+  assert.deepEqual(readAccounts({ HOME: home }), []);
+});
+
+test('use copies personal access token auth into the active Codex slot', () => {
+  const home = makeTempHome();
+  writeAccounts([normalizeAccount({
+    OPENAI_API_KEY: null,
+    email: 'token@example.com',
+    personal_access_token: 'at-test-token-CQUreFI',
+  })], { HOME: home });
+
+  const result = runCli(['use', 'token@example.com'], {
+    env: {
+      HOME: home,
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /已切换 Codex 账号：token@example\.com/);
+
+  const activeAuth = JSON.parse(fs.readFileSync(path.join(home, '.codex', 'auth.json'), 'utf8'));
+  assert.deepEqual(activeAuth, {
+    OPENAI_API_KEY: null,
+    email: 'token@example.com',
+    personal_access_token: 'at-test-token-CQUreFI',
+  });
+});
+
+test('use still accepts personal access token fallback selector when email exists', () => {
+  const home = makeTempHome();
+  writeAccounts([normalizeAccount({
+    OPENAI_API_KEY: null,
+    email: 'token@example.com',
+    personal_access_token: 'at-test-token-CQUreFI',
+  })], { HOME: home });
+
+  const result = runCli(['use', 'pat-CQUreFI'], {
+    env: {
+      HOME: home,
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /已切换 Codex 账号：token@example\.com/);
 });
 
 test('list shows short account_id when email is missing', () => {

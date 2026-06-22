@@ -8,11 +8,13 @@ const {
 const {
   decodeAccountEmailFromAuth,
   decodeAccountLabel,
+  decodePersonalAccessTokenLabelFromAuth,
   decodeShortAccountIdFromAuth,
 } = require('./auth');
 
 const STORE_VERSION = 1;
 const SHORT_ACCOUNT_ID = /^[a-f0-9]{8}$/i;
+const PERSONAL_TOKEN_ID = /^pat-[A-Za-z0-9_-]{4,}$/;
 
 // 校验外部传入的账号标识，避免路径穿越和隐藏目录误用。
 const validateName = (name) => {
@@ -21,23 +23,26 @@ const validateName = (name) => {
     throw new Error('账号名不能是 .、..、以 . 开头，且不能包含 /');
   }
   const email = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$/;
-  if (!email.test(name) && !SHORT_ACCOUNT_ID.test(name)) throw new Error('账号只能是邮箱或短 ID');
+  if (!email.test(name) && !SHORT_ACCOUNT_ID.test(name) && !PERSONAL_TOKEN_ID.test(name)) {
+    throw new Error('账号只能是邮箱、短 ID 或个人访问令牌短标识');
+  }
 };
 
 const displayAccount = (account) => {
-  return account.email || account.shortId || account.id;
+  return account.email || account.shortId || account.tokenId || account.id;
 };
 
 const normalizeAccount = (auth) => {
   const email = decodeAccountEmailFromAuth(auth);
   const shortId = decodeShortAccountIdFromAuth(auth);
-  const id = email || shortId;
-  if (!id) throw new Error('未能从 auth.json 解析出邮箱或短 ID');
-  return { auth, email, id, shortId };
+  const tokenId = decodePersonalAccessTokenLabelFromAuth(auth);
+  const id = email || shortId || tokenId;
+  if (!id) throw new Error('未能从 auth.json 解析出邮箱、短 ID 或个人访问令牌短标识');
+  return { auth, email, id, shortId, tokenId };
 };
 
 const accountMatches = (account, selector) => {
-  return [account.id, account.email, account.shortId, displayAccount(account)].includes(selector);
+  return [account.id, account.email, account.shortId, account.tokenId, displayAccount(account)].includes(selector);
 };
 
 const readAccounts = (env = process.env) => {
