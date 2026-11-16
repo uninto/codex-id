@@ -6,6 +6,7 @@ const {
   assertNotSymlink,
   ensureDir,
   ensureReadableFile,
+  getAccountsFile,
   getCodexHome,
   writeFileAtomically,
 } = require('./paths');
@@ -39,13 +40,18 @@ const runInitChecks = (env = process.env) => {
 };
 
 const syncCurrentAccount = (env = process.env, output = process.stdout) => {
-  const codexHome = getCodexHome(env);
-  const { account, overwritten } = upsertAccount(readAuth(codexHome), env);
+  const { account, overwritten } = upsertAccount(readAuth(getCodexHome(env)), env);
   if (overwritten) {
-    output.write(`账号已存在：${displayAccount(account)}，已更新：${path.join(codexHome, 'codex-id.json')}\n`);
+    output.write(`账号已存在：${displayAccount(account)}，已更新：${getAccountsFile(env)}\n`);
     return;
   }
-  output.write(`已同步当前 Codex 账号：${displayAccount(account)}，已写入：${path.join(codexHome, 'codex-id.json')}\n`);
+  output.write(`已同步当前 Codex 账号：${displayAccount(account)}，已写入：${getAccountsFile(env)}\n`);
+};
+
+const writeCurrentAuth = (auth, env = process.env) => {
+  const authPath = path.join(getCodexHome(env), 'auth.json');
+  writeFileAtomically(authPath, `${JSON.stringify(auth, null, 2)}\n`);
+  return authPath;
 };
 
 const initAccounts = (env = process.env, output = process.stdout) => {
@@ -68,10 +74,9 @@ const removeLoginTempDirs = (env = process.env) => {
 const useAccount = (selector, env = process.env, output = process.stdout) => {
   const account = resolveAccount(selector, env);
   if (!account) throw new Error(`账号不存在：${selector}`);
-  const codexHome = getCodexHome(env);
-  ensureDir(codexHome);
-  writeFileAtomically(path.join(codexHome, 'auth.json'), `${JSON.stringify(account.auth, null, 2)}\n`);
-  output.write(`已切换 Codex 账号：${displayAccount(account)}，已更新：${path.join(codexHome, 'auth.json')}；VS Code Codex 可能需要 Reload Window 或重启 VS Code 后生效。\n`);
+  ensureDir(getCodexHome(env));
+  const authPath = writeCurrentAuth(account.auth, env);
+  output.write(`已切换 Codex 账号：${displayAccount(account)}，已更新：${authPath}；VS Code Codex 可能需要 Reload Window 或重启 VS Code 后生效。\n`);
 };
 
 const removeAccountFromStore = (account, message, env = process.env, output = process.stdout) => {
@@ -88,7 +93,7 @@ const removeAccount = (selector, env = process.env, output = process.stdout) => 
 };
 
 const writeEmptyAccountsMessage = (env = process.env, output = process.stdout) => {
-  output.write(`（${path.join(getCodexHome(env), 'codex-id.json')} 里还没有账号）\n`);
+  output.write(`（${getAccountsFile(env)} 里还没有账号）\n`);
 };
 
 const formatCodexLoginFailure = (codexBin, result) => {
@@ -304,15 +309,13 @@ const getTotalResetMode = (resetAt) => {
 
 const buildUsageColumns = (item) => {
   const planLabel = term.formatPlanType(item.plan);
-  const nextReset = item.next_reset ?? item.h5_reset;
-  const totalReset = item.total_reset ?? item.d7_reset;
-  const nextPercent = term.formatUsagePercent(item.next_used ?? item.h5_used);
-  const totalPercent = term.formatUsagePercent(item.total_used ?? item.d7_used);
-  const nextColumn = nextPercent !== '-' && nextReset
-    ? `${nextPercent} (${term.formatResetTime(nextReset, 'time')})`
+  const nextPercent = term.formatUsagePercent(item.next_used);
+  const totalPercent = term.formatUsagePercent(item.total_used);
+  const nextColumn = nextPercent !== '-' && item.next_reset
+    ? `${nextPercent} (${term.formatResetTime(item.next_reset, 'time')})`
     : nextPercent;
-  const totalColumn = totalPercent !== '-' && totalReset
-    ? `${totalPercent} (${term.formatResetTime(totalReset, getTotalResetMode(totalReset))})`
+  const totalColumn = totalPercent !== '-' && item.total_reset
+    ? `${totalPercent} (${term.formatResetTime(item.total_reset, getTotalResetMode(item.total_reset))})`
     : totalPercent;
 
   return { nextColumn, nextPercent, planLabel, totalColumn, totalPercent };
@@ -323,10 +326,10 @@ const renderUsageRow = (row, item, accountWidth, output = process.stdout) => {
   const statusColor = getUsageRowColor({
     isOffline: row.isOffline,
     nextPercent,
-    nextUsed: item.next_used ?? item.h5_used,
+    nextUsed: item.next_used,
     planLabel,
     totalPercent,
-    totalUsed: item.total_used ?? item.d7_used,
+    totalUsed: item.total_used,
   });
   const line = `${term.pad(row.indexDisplay, term.INDEX_WIDTH)} ${term.pad(row.account, accountWidth)} ${term.pad(planLabel, term.PLAN_WIDTH)} ${term.pad(nextColumn, term.USAGE_WIDTH)} ${term.pad(totalColumn, term.USAGE_WIDTH)}`;
   term.printRow(line, { isCurrent: row.isCurrent, color: statusColor }, output);
@@ -340,7 +343,7 @@ const renderStatusRow = (row, accountWidth, output = process.stdout) => {
 const refreshAccountForList = async (account, activeLabel, env, services, errOutput) => {
   if (!tokenExpiresSoon(account.auth)) return { account, refreshedCurrent: false, changed: false };
   try {
-    const nextAuth = await refreshAuth(account.auth, env, services.refreshFetch);
+    const nextAuth = await refreshAuth(account.auth, services.refreshFetch);
     if (!nextAuth) return { account, refreshedCurrent: false, changed: false };
     const next = { ...account, auth: nextAuth };
     return {
@@ -365,10 +368,7 @@ const refreshAccountsForList = async (accounts, activeLabel, env = process.env, 
   const refreshed = results.map((result) => result.account);
   writeAccounts(refreshed, env);
   const current = results.find((result) => result.refreshedCurrent);
-  if (current) {
-    const codexHome = getCodexHome(env);
-    writeFileAtomically(path.join(codexHome, 'auth.json'), `${JSON.stringify(current.account.auth, null, 2)}\n`);
-  }
+  if (current) writeCurrentAuth(current.account.auth, env);
   return refreshed;
 };
 
@@ -387,10 +387,7 @@ const syncPersonalAccessTokenEmails = (accounts, usageResults, activeLabel, env 
   if (!changed) return accounts;
 
   writeAccounts(synced, env);
-  if (activeAuth) {
-    const codexHome = getCodexHome(env);
-    writeFileAtomically(path.join(codexHome, 'auth.json'), `${JSON.stringify(activeAuth, null, 2)}\n`);
-  }
+  if (activeAuth) writeCurrentAuth(activeAuth, env);
   return synced;
 };
 

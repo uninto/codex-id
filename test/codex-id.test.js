@@ -348,10 +348,10 @@ test('list renders usage columns and light gray cooling rows', async () => {
   usage.loadUsage = async () => [{
     key: 'free@example.com',
     plan: 'free',
-    h5_used: null,
-    h5_reset: null,
-    d7_used: 100,
-    d7_reset: null,
+    next_used: null,
+    next_reset: null,
+    total_used: 100,
+    total_reset: null,
   }];
 
   const originalNoColor = process.env.NO_COLOR;
@@ -391,10 +391,10 @@ test('list displays personal access token email from usage response', async () =
     key: 'pat-CQUreFI',
     email: 'token@example.com',
     plan: 'team',
-    h5_used: 10,
-    h5_reset: null,
-    d7_used: 31,
-    d7_reset: null,
+    next_used: 10,
+    next_reset: null,
+    total_used: 31,
+    total_reset: null,
   }];
   const chunks = [];
   const output = new Writable({
@@ -459,7 +459,6 @@ test('list renders monthly total window without window label', async () => {
     next_reset: null,
     total_used: 5,
     total_reset: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
-    total_seconds: 2592000,
   }];
 
   const chunks = [];
@@ -498,7 +497,6 @@ test('list renders near total reset as time', async () => {
     next_reset: null,
     total_used: 5,
     total_reset: Math.floor(Date.now() / 1000) + 2 * 60 * 60,
-    total_seconds: 2592000,
   }];
 
   const chunks = [];
@@ -532,10 +530,10 @@ test('current account keeps its status color instead of selected color', async (
   usage.loadUsage = async () => [{
     key: 'current@example.com',
     plan: 'pro',
-    h5_used: 100,
-    h5_reset: null,
-    d7_used: 20,
-    d7_reset: null,
+    next_used: 100,
+    next_reset: null,
+    total_used: 20,
+    total_reset: null,
   }];
 
   const originalNoColor = process.env.NO_COLOR;
@@ -629,23 +627,23 @@ test('usage rows use status colors for limited cooling and offline accounts', ()
 test('account usage state classifies paid quota windows', () => {
   assert.equal(usage.getAccountUsageState({
     plan: 'pro',
-    h5_used: 2,
-    d7_used: 99,
+    next_used: 2,
+    total_used: 99,
   }), ACCOUNT_USAGE_STATES.AVAILABLE);
   assert.equal(usage.getAccountUsageState({
     plan: 'pro',
-    h5_used: 20,
-    d7_used: 40,
+    next_used: 20,
+    total_used: 40,
   }), ACCOUNT_USAGE_STATES.AVAILABLE);
   assert.equal(usage.getAccountUsageState({
     plan: 'pro',
-    h5_used: 97,
-    d7_used: 40,
+    next_used: 97,
+    total_used: 40,
   }), ACCOUNT_USAGE_STATES.LIMITED);
   assert.equal(usage.getAccountUsageState({
     plan: 'pro',
-    h5_used: 2,
-    d7_used: 100,
+    next_used: 2,
+    total_used: 100,
   }), ACCOUNT_USAGE_STATES.COOLING);
 });
 
@@ -656,10 +654,10 @@ test('account usage state classifies missing usage as offline', () => {
 
 test('auto switch triggers for limited cooling or offline current accounts', () => {
   const results = [
-    { key: 'available@example.com', plan: 'pro', h5_used: 2, d7_used: 40 },
-    { key: 'mid-available@example.com', plan: 'pro', h5_used: 50, d7_used: 40 },
-    { key: 'limited@example.com', plan: 'pro', h5_used: 98, d7_used: 40 },
-    { key: 'cooling@example.com', plan: 'pro', h5_used: 100, d7_used: 40 },
+    { key: 'available@example.com', plan: 'pro', next_used: 2, total_used: 40 },
+    { key: 'mid-available@example.com', plan: 'pro', next_used: 50, total_used: 40 },
+    { key: 'limited@example.com', plan: 'pro', next_used: 98, total_used: 40 },
+    { key: 'cooling@example.com', plan: 'pro', next_used: 100, total_used: 40 },
     { key: 'offline@example.com', error: 'timeout' },
   ];
 
@@ -672,8 +670,8 @@ test('auto switch triggers for limited cooling or offline current accounts', () 
 
 test('probe account status uses usage endpoint response status', async () => {
   const home = makeTempHome();
-  const accountHome = path.join(home, '.codex-test-accounts', 'online@example.com');
-  writeUsageAuth(accountHome, 'online@example.com');
+  writeUsageAuth(path.join(home, '.codex-test-accounts', 'online@example.com'), 'online@example.com');
+  const [accountHome] = readAccounts({ HOME: home });
 
   assert.equal(await usage.probeAccountStatus(accountHome, async () => ({
     ok: true,
@@ -778,14 +776,8 @@ test('usage load maps monthly quota window to total fields', async () => {
     plan: 'free',
     next_used: null,
     next_reset: null,
-    next_seconds: null,
     total_used: 5,
     total_reset: 1783146464,
-    total_seconds: 2592000,
-    h5_used: null,
-    h5_reset: null,
-    d7_used: 5,
-    d7_reset: 1783146464,
   }]);
   assert.equal(usage.getAccountUsageState(results[0]), ACCOUNT_USAGE_STATES.AVAILABLE);
 });
@@ -887,8 +879,8 @@ test('use without selector keeps current account when no available account exist
 
   const originalLoadUsage = usage.loadUsage;
   usage.loadUsage = async () => ([
-    { key: 'current@example.com', plan: 'pro', h5_used: 98, h5_reset: null, d7_used: 0, d7_reset: null },
-    { key: 'other@example.com', plan: 'pro', h5_used: 99, h5_reset: null, d7_used: 0, d7_reset: null },
+    { key: 'current@example.com', plan: 'pro', next_used: 98, next_reset: null, total_used: 0, total_reset: null },
+    { key: 'other@example.com', plan: 'pro', next_used: 99, next_reset: null, total_used: 0, total_reset: null },
   ]);
 
   const chunks = [];
@@ -922,8 +914,8 @@ test('use without selector keeps current account while current state is availabl
 
   const originalLoadUsage = usage.loadUsage;
   usage.loadUsage = async () => ([
-    { key: 'better@example.com', plan: 'pro', h5_used: 20, h5_reset: null, d7_used: 0, d7_reset: null },
-    { key: 'current@example.com', plan: 'pro', h5_used: 50, h5_reset: null, d7_used: 40, d7_reset: null },
+    { key: 'better@example.com', plan: 'pro', next_used: 20, next_reset: null, total_used: 0, total_reset: null },
+    { key: 'current@example.com', plan: 'pro', next_used: 50, next_reset: null, total_used: 40, total_reset: null },
   ]);
 
   const chunks = [];
@@ -957,8 +949,8 @@ test('use without selector switches to an available account when current state i
 
   const originalLoadUsage = usage.loadUsage;
   usage.loadUsage = async () => ([
-    { key: 'better@example.com', plan: 'pro', h5_used: 2, h5_reset: null, d7_used: 0, d7_reset: null },
-    { key: 'current@example.com', plan: 'pro', h5_used: 98, h5_reset: null, d7_used: 0, d7_reset: null },
+    { key: 'better@example.com', plan: 'pro', next_used: 2, next_reset: null, total_used: 0, total_reset: null },
+    { key: 'current@example.com', plan: 'pro', next_used: 98, next_reset: null, total_used: 0, total_reset: null },
   ]);
 
   const chunks = [];
@@ -993,9 +985,9 @@ test('use without selector skips paid accounts whose total quota is cooling', as
 
   const originalLoadUsage = usage.loadUsage;
   usage.loadUsage = async () => ([
-    { key: 'a-cooldown@example.com', plan: 'pro', h5_used: 10, h5_reset: null, d7_used: 100, d7_reset: null },
-    { key: 'z-better@example.com', plan: 'pro', h5_used: 2, h5_reset: null, d7_used: 40, d7_reset: null },
-    { key: 'current@example.com', plan: 'pro', h5_used: 98, h5_reset: null, d7_used: 40, d7_reset: null },
+    { key: 'a-cooldown@example.com', plan: 'pro', next_used: 10, next_reset: null, total_used: 100, total_reset: null },
+    { key: 'z-better@example.com', plan: 'pro', next_used: 2, next_reset: null, total_used: 40, total_reset: null },
+    { key: 'current@example.com', plan: 'pro', next_used: 98, next_reset: null, total_used: 40, total_reset: null },
   ]);
 
   const chunks = [];
@@ -1031,9 +1023,9 @@ test('use without selector switches to first available account without comparing
 
   const originalLoadUsage = usage.loadUsage;
   usage.loadUsage = async () => ([
-    { key: 'a-higher@example.com', plan: 'pro', h5_used: 50, h5_reset: null, d7_used: 0, d7_reset: null },
-    { key: 'z-available@example.com', plan: 'pro', h5_used: 2, h5_reset: null, d7_used: 0, d7_reset: null },
-    { key: 'current@example.com', plan: 'pro', h5_used: 98, h5_reset: null, d7_used: 40, d7_reset: null },
+    { key: 'a-higher@example.com', plan: 'pro', next_used: 50, next_reset: null, total_used: 0, total_reset: null },
+    { key: 'z-available@example.com', plan: 'pro', next_used: 2, next_reset: null, total_used: 0, total_reset: null },
+    { key: 'current@example.com', plan: 'pro', next_used: 98, next_reset: null, total_used: 40, total_reset: null },
   ]);
 
   const chunks = [];
@@ -1349,35 +1341,14 @@ test('init falls back to short account_id when email is missing', () => {
   assert.deepEqual(readAccounts({ HOME: home }).map((account) => account.id), ['6b17e1c8']);
 });
 
-test('probe account status returns offline when auth.json missing and unknown when fetch unavailable', async () => {
+test('probe account status returns offline without credentials and unknown when fetch fails', async () => {
   const home = makeTempHome();
-  const noAuthDir = path.join(home, '.codex-test-accounts', 'noauth@example.com');
-  fs.mkdirSync(noAuthDir, { recursive: true });
-  assert.equal(await usage.probeAccountStatus(noAuthDir, async () => ({ ok: true })), 'offline');
+  assert.equal(await usage.probeAccountStatus({ id: 'noauth', auth: {} }, async () => ({ ok: true })), 'offline');
 
-  const accountDir = path.join(home, '.codex-test-accounts', 'has@example.com');
-  writeUsageAuth(accountDir, 'has@example.com');
-  // fetchImpl 不可用时应返回 unknown，而不是 offline。
-  assert.equal(await usage.probeAccountStatus(accountDir, null), 'unknown');
-});
-
-test('probe rejects symlinked auth.json (usage path symlink defense)', async () => {
-  if (process.platform === 'win32') return;
-  const home = makeTempHome();
-  const realDir = path.join(home, 'real');
-  writeUsageAuth(realDir, 'real@example.com');
-  const accountDir = path.join(home, '.codex-test-accounts', 'real@example.com');
-  fs.mkdirSync(accountDir, { recursive: true });
-  fs.symlinkSync(path.join(realDir, 'auth.json'), path.join(accountDir, 'auth.json'));
-
-  // 应被 readAuth 的 symlink 防护拦截 → 返回 offline（视为没有可用凭据）。
-  let fetchCalled = false;
-  const status = await usage.probeAccountStatus(accountDir, async () => {
-    fetchCalled = true;
-    return { ok: true, status: 200 };
-  });
-  assert.equal(status, 'offline');
-  assert.equal(fetchCalled, false);
+  writeUsageAuth(path.join(home, '.codex-test-accounts', 'has@example.com'), 'has@example.com');
+  const [account] = readAccounts({ HOME: home });
+  // 请求异常时应返回 unknown，而不是 offline。
+  assert.equal(await usage.probeAccountStatus(account, async () => { throw new Error('network down'); }), 'unknown');
 });
 
 test('getHomeDir handles Windows-style envs and msys HOME', () => {

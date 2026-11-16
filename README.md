@@ -11,6 +11,9 @@
 └── codex-id.json  # codex-id 账号库
 ```
 
+从旧版 `codexs` 升级：不再读取 `~/.codex-accounts/` 和 `CODEX_ACCOUNTS_ROOT`，
+旧账号需逐个 `codex login` 后运行 `cid init`，或用 `cid add` 重新添加。
+
 `codex-id.json` 只保存最小结构。默认账号来自 Codex 登录态：
 
 ```json

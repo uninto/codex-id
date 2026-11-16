@@ -1,6 +1,3 @@
-const path = require('node:path');
-const { readAuth } = require('./auth');
-
 const USAGE_ENDPOINT = 'https://chatgpt.com/backend-api/wham/usage';
 const REQUEST_TIMEOUT_MS = 8000;
 const USAGE_5H_WINDOW_SECONDS = 18000;
@@ -13,28 +10,23 @@ const ACCOUNT_USAGE_STATES = Object.freeze({
   OFFLINE: 'offline',
 });
 
-// 从 auth.json 中提取调用 Usage 接口所需的最小凭据；
-// 复用 readAuth 的 symlink 防护，保证 list / probe 与 use / init 安全等级一致。
-const extractAuthFields = (homeDir) => {
-  try {
-    const auth = typeof homeDir === 'string' ? readAuth(homeDir) : homeDir && homeDir.auth;
-    if (auth && typeof auth.personal_access_token === 'string') {
-      return {
-        accessToken: auth.personal_access_token,
-        accountId: '',
-      };
-    }
-    const tokens = auth && auth.tokens;
-    if (!tokens || typeof tokens.access_token !== 'string' || typeof tokens.account_id !== 'string') {
-      return null;
-    }
+// 从账号 auth 中提取调用 Usage 接口所需的最小凭据。
+const extractAuthFields = (account) => {
+  const auth = account && account.auth;
+  if (auth && typeof auth.personal_access_token === 'string') {
     return {
-      accessToken: tokens.access_token,
-      accountId: tokens.account_id,
+      accessToken: auth.personal_access_token,
+      accountId: '',
     };
-  } catch (_) {
+  }
+  const tokens = auth && auth.tokens;
+  if (!tokens || typeof tokens.access_token !== 'string' || typeof tokens.account_id !== 'string') {
     return null;
   }
+  return {
+    accessToken: tokens.access_token,
+    accountId: tokens.account_id,
+  };
 };
 
 const normalizePercent = (value) => {
@@ -52,8 +44,6 @@ const hasUsageFields = (item) => {
     item.plan
     || isValidPercent(item.next_used)
     || isValidPercent(item.total_used)
-    || isValidPercent(item.h5_used)
-    || isValidPercent(item.d7_used)
   ));
 };
 
@@ -64,12 +54,12 @@ const buildUsageHeaders = (token, accountId = '') => {
 };
 
 // 将账号条目转换成可并发查询 Usage 的请求条目。
-const buildUsageEntries = (accountDirs) => {
-  return accountDirs.flatMap((account) => {
+const buildUsageEntries = (accounts) => {
+  return accounts.flatMap((account) => {
     const fields = extractAuthFields(account);
     if (!fields) return [];
     return [{
-      key: typeof account === 'string' ? path.basename(account) : account.id,
+      key: account.id,
       token: fields.accessToken,
       accountId: fields.accountId,
     }];
@@ -99,22 +89,14 @@ const fetchUsageOne = async (entry, fetchImpl = fetch) => {
     const windows = [rateLimit.primary_window, rateLimit.secondary_window].filter(Boolean);
     const next = findWindow(windows, USAGE_5H_WINDOW_SECONDS);
     const total = findTotalWindow(windows);
-    const nextUsed = normalizePercent(next.used_percent);
-    const totalUsed = normalizePercent(total.used_percent);
     return {
       key: entry.key,
       email: data.email || '',
       plan: data.plan_type || '',
-      next_used: nextUsed,
+      next_used: normalizePercent(next.used_percent),
       next_reset: next.reset_at ?? null,
-      next_seconds: next.limit_window_seconds ?? null,
-      total_used: totalUsed,
+      total_used: normalizePercent(total.used_percent),
       total_reset: total.reset_at ?? null,
-      total_seconds: total.limit_window_seconds ?? null,
-      h5_used: nextUsed,
-      h5_reset: next.reset_at ?? null,
-      d7_used: totalUsed,
-      d7_reset: total.reset_at ?? null,
     };
   } catch (error) {
     return { key: entry.key, error: error.message };
@@ -122,10 +104,9 @@ const fetchUsageOne = async (entry, fetchImpl = fetch) => {
 };
 
 // 用 Usage 接口探活账号，避免依赖本地 codex 命令或模型列表输出。
-const probeAccountStatus = async (homeDir, fetchImpl = fetch) => {
-  const fields = extractAuthFields(homeDir);
+const probeAccountStatus = async (account, fetchImpl = fetch) => {
+  const fields = extractAuthFields(account);
   if (!fields) return 'offline';
-  if (typeof fetchImpl !== 'function' || typeof AbortSignal.timeout !== 'function') return 'unknown';
   try {
     const response = await fetchImpl(USAGE_ENDPOINT, {
       headers: buildUsageHeaders(fields.accessToken, fields.accountId),
@@ -140,9 +121,6 @@ const probeAccountStatus = async (homeDir, fetchImpl = fetch) => {
 };
 
 const fetchPersonalAccessTokenProfile = async (token, fetchImpl = fetch) => {
-  if (typeof fetchImpl !== 'function' || typeof AbortSignal.timeout !== 'function') {
-    throw new Error('当前 Node 运行时不支持访问令牌验证');
-  }
   const response = await fetchImpl(USAGE_ENDPOINT, {
     headers: buildUsageHeaders(token),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -155,9 +133,8 @@ const fetchPersonalAccessTokenProfile = async (token, fetchImpl = fetch) => {
   };
 };
 
-const loadUsage = async (accountDirs, fetchImpl = fetch) => {
-  if (typeof fetchImpl !== 'function' || typeof AbortSignal.timeout !== 'function') return [];
-  const entries = buildUsageEntries(accountDirs);
+const loadUsage = async (accounts, fetchImpl = fetch) => {
+  const entries = buildUsageEntries(accounts);
   if (entries.length === 0) return [];
   return Promise.all(entries.map((entry) => fetchUsageOne(entry, fetchImpl)));
 };
@@ -186,13 +163,11 @@ const classifyPrimaryWindow = (usedPercent) => {
 // 统一账号额度状态，供自动切换和后续展示逻辑复用。
 const getAccountUsageState = (item) => {
   if (!hasUsageFields(item)) return ACCOUNT_USAGE_STATES.OFFLINE;
-  const nextUsed = item.next_used ?? item.h5_used;
-  const totalUsed = item.total_used ?? item.d7_used;
-  if (item.plan === 'free') return classifyPrimaryWindow(totalUsed);
-  if (!isValidPercent(totalUsed) || totalUsed >= QUOTA_COOLING_PERCENT) {
+  if (item.plan === 'free') return classifyPrimaryWindow(item.total_used);
+  if (!isValidPercent(item.total_used) || item.total_used >= QUOTA_COOLING_PERCENT) {
     return ACCOUNT_USAGE_STATES.COOLING;
   }
-  return classifyPrimaryWindow(nextUsed);
+  return classifyPrimaryWindow(item.next_used);
 };
 
 const accountShouldAutoSwitch = (results, key) => {

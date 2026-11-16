@@ -1,5 +1,7 @@
+const { decodeBase64Url } = require('./auth');
+
 const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
-const DEFAULT_REFRESH_TOKEN_URL = 'https://auth.openai.com/oauth/token';
+const REFRESH_TOKEN_URL = 'https://auth.openai.com/oauth/token';
 const REFRESH_GRACE_SECONDS = 24 * 60 * 60;
 const REQUEST_TIMEOUT_MS = 8000;
 
@@ -8,9 +10,7 @@ const decodeJwtPayload = (token) => {
   const [, payload] = token.split('.');
   if (!payload) return null;
   try {
-    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-    return JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+    return JSON.parse(decodeBase64Url(payload));
   } catch (_) {
     return null;
   }
@@ -30,12 +30,11 @@ const buildRefreshBody = (refreshToken) => {
   return body;
 };
 
-const refreshAuth = async (auth, env = process.env, fetchImpl = fetch) => {
+const refreshAuth = async (auth, fetchImpl = fetch) => {
   const tokens = auth && auth.tokens;
   if (!tokens || typeof tokens.refresh_token !== 'string') return null;
-  if (typeof fetchImpl !== 'function' || typeof AbortSignal.timeout !== 'function') return null;
 
-  const response = await fetchImpl(env.CODEX_REFRESH_TOKEN_URL_OVERRIDE || DEFAULT_REFRESH_TOKEN_URL, {
+  const response = await fetchImpl(REFRESH_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: buildRefreshBody(tokens.refresh_token),

@@ -36,22 +36,14 @@ const decodeAccountEmailFromAuth = (auth) => {
 };
 
 const decodeShortAccountIdFromAuth = (auth) => {
-  try {
-    const accountId = auth && auth.tokens && auth.tokens.account_id;
-    return typeof accountId === 'string' && accountId.length >= 8 ? accountId.slice(0, 8) : '';
-  } catch (_) {
-    return '';
-  }
+  const accountId = auth && auth.tokens && auth.tokens.account_id;
+  return typeof accountId === 'string' && accountId.length >= 8 ? accountId.slice(0, 8) : '';
 };
 
 const decodePersonalAccessTokenLabelFromAuth = (auth) => {
-  try {
-    const token = auth && auth.personal_access_token;
-    if (typeof token !== 'string' || token.length < 8) return '';
-    return `pat-${token.slice(-8).replace(/^[-_]+/, '')}`;
-  } catch (_) {
-    return '';
-  }
+  const token = auth && auth.personal_access_token;
+  if (typeof token !== 'string' || token.length < 8) return '';
+  return `pat-${token.slice(-8).replace(/^[-_]+/, '')}`;
 };
 
 // 优先展示邮箱；缺少邮箱时退回 account_id 或 personal_access_token 短标识。
@@ -65,6 +57,7 @@ const decodeAccountLabel = (homeDir) => {
 module.exports = {
   decodeAccountEmailFromAuth,
   decodeAccountLabel,
+  decodeBase64Url,
   decodePersonalAccessTokenLabelFromAuth,
   decodeShortAccountIdFromAuth,
   readAuth,
