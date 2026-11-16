@@ -248,11 +248,11 @@ const useDefaultAccount = async (env = process.env, output = process.stdout) => 
 const getUsageRowColor = ({ isOffline, planLabel, nextUsed, totalUsed, nextPercent, totalPercent }) => {
   if (isOffline) return 'lightRed';
   if (planLabel === 'Free') {
-    if (totalUsed >= 100 || totalPercent === '0%') return 'lightGray';
+    if (totalUsed >= 100 || totalPercent === '0%') return 'gray';
     if (totalUsed >= 97) return 'lightYellow';
     return '';
   }
-  if (nextUsed >= 100 || nextPercent === '0%' || totalPercent === '0%') return 'lightGray';
+  if (nextUsed >= 100 || nextPercent === '0%' || totalPercent === '0%') return 'gray';
   if (nextUsed >= 97) return 'lightYellow';
   return '';
 };

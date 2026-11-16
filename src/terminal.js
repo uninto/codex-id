@@ -15,7 +15,7 @@ const colorize = (value, color, env = process.env, stream = process.stdout) => {
   if (!stream.isTTY || env.NO_COLOR) return value;
   const colors = {
     green: 32,
-    lightGray: '38;2;230;230;230',
+    gray: 90,
     lightRed: '38;2;255;160;160',
     lightYellow: '38;2;255;230;150',
   };

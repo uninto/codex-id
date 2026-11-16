@@ -379,7 +379,7 @@ test('list renders usage columns and light gray cooling rows', async () => {
   const stdout = chunks.join('');
   assert.match(stdout, /No\.\s+Account\s+Plan\s+Next\s+Total/);
   assert.match(stdout, /\u001b\[1mNo\.\s+Account\s+Plan\s+Next\s+Total\s+\u001b\[0m/);
-  assert.match(stdout, /\u001b\[38;2;230;230;230m1\s+free@example\.com\s+Free\s+-\s+0%/);
+  assert.match(stdout, /\u001b\[90m1\s+free@example\.com\s+Free\s+-\s+0%/);
 });
 
 test('list displays personal access token email from usage response', async () => {
@@ -561,7 +561,7 @@ test('current account keeps its status color instead of selected color', async (
   }
 
   const stdout = chunks.join('');
-  assert.match(stdout, /\u001b\[38;2;230;230;230m1\u001b\[0m\u001b\[32m\*\u001b\[0m\u001b\[38;2;230;230;230m\s+current@example\.com\s+Pro\s+0%/);
+  assert.match(stdout, /\u001b\[90m1\u001b\[0m\u001b\[32m\*\u001b\[0m\u001b\[90m\s+current@example\.com\s+Pro\s+0%/);
 });
 
 test('usage rows use status colors for limited cooling and offline accounts', () => {
@@ -571,7 +571,7 @@ test('usage rows use status colors for limited cooling and offline accounts', ()
     totalUsed: 100,
     nextPercent: '-',
     totalPercent: '0%',
-  }), 'lightGray');
+  }), 'gray');
   assert.equal(getUsageRowColor({
     isOffline: false,
     planLabel: 'Free',
@@ -584,7 +584,7 @@ test('usage rows use status colors for limited cooling and offline accounts', ()
     planLabel: 'Pro',
     nextPercent: '0%',
     totalPercent: '40%',
-  }), 'lightGray');
+  }), 'gray');
   assert.equal(getUsageRowColor({
     isOffline: false,
     planLabel: 'Pro',
@@ -597,7 +597,7 @@ test('usage rows use status colors for limited cooling and offline accounts', ()
     planLabel: 'Pro',
     nextPercent: '30%',
     totalPercent: '0%',
-  }), 'lightGray');
+  }), 'gray');
   assert.equal(getUsageRowColor({
     isOffline: false,
     planLabel: 'Pro',
@@ -623,7 +623,7 @@ test('usage rows use status colors for limited cooling and offline accounts', ()
     nextUsed: 100,
     nextPercent: '0%',
     totalPercent: '40%',
-  }), 'lightGray');
+  }), 'gray');
 });
 
 test('account usage state classifies paid quota windows', () => {
