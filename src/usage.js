@@ -163,8 +163,10 @@ const classifyPrimaryWindow = (usedPercent) => {
 // 统一账号额度状态，供自动切换和后续展示逻辑复用。
 const getAccountUsageState = (item) => {
   if (!hasUsageFields(item)) return ACCOUNT_USAGE_STATES.OFFLINE;
-  if (item.plan === 'free') return classifyPrimaryWindow(item.total_used);
-  if (!isValidPercent(item.total_used) || item.total_used >= QUOTA_COOLING_PERCENT) {
+  // 免费账号和只有总周期限额的账号没有 Next 窗口，只按 Total 判断。
+  if (item.plan === 'free' || !isValidPercent(item.next_used)) return classifyPrimaryWindow(item.total_used);
+  // 只有 Next 窗口的账号（如部分 team 访问令牌账号）只按 Next 判断。
+  if (isValidPercent(item.total_used) && item.total_used >= QUOTA_COOLING_PERCENT) {
     return ACCOUNT_USAGE_STATES.COOLING;
   }
   return classifyPrimaryWindow(item.next_used);

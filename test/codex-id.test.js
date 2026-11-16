@@ -647,6 +647,20 @@ test('account usage state classifies paid quota windows', () => {
   }), ACCOUNT_USAGE_STATES.COOLING);
 });
 
+test('account usage state classifies paid total-only quota by total window', () => {
+  assert.equal(usage.getAccountUsageState({ plan: 'pro', next_used: null, total_used: 40 }), ACCOUNT_USAGE_STATES.AVAILABLE);
+  assert.equal(usage.getAccountUsageState({ plan: 'pro', next_used: null, total_used: 98 }), ACCOUNT_USAGE_STATES.LIMITED);
+  assert.equal(usage.getAccountUsageState({ plan: 'pro', next_used: null, total_used: 100 }), ACCOUNT_USAGE_STATES.COOLING);
+  assert.equal(usage.getAccountUsageState({ plan: 'pro', next_used: null, total_used: null }), ACCOUNT_USAGE_STATES.COOLING);
+  assert.equal(getUsageRowColor({ planLabel: 'Pro', nextUsed: null, totalUsed: 98, nextPercent: '-', totalPercent: '2%' }), 'lightYellow');
+});
+
+test('account usage state classifies paid next-only quota by next window', () => {
+  assert.equal(usage.getAccountUsageState({ plan: 'team', next_used: 10, total_used: null }), ACCOUNT_USAGE_STATES.AVAILABLE);
+  assert.equal(usage.getAccountUsageState({ plan: 'team', next_used: 98, total_used: null }), ACCOUNT_USAGE_STATES.LIMITED);
+  assert.equal(usage.getAccountUsageState({ plan: 'team', next_used: 100, total_used: null }), ACCOUNT_USAGE_STATES.COOLING);
+});
+
 test('account usage state classifies missing usage as offline', () => {
   assert.equal(usage.getAccountUsageState(null), ACCOUNT_USAGE_STATES.OFFLINE);
   assert.equal(usage.getAccountUsageState({ key: 'offline@example.com', error: 'timeout' }), ACCOUNT_USAGE_STATES.OFFLINE);
